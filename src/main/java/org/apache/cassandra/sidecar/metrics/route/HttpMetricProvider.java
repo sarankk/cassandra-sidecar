@@ -16,27 +16,30 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.sidecar.stats;
+package org.apache.cassandra.sidecar.metrics.route;
+
+import java.util.Objects;
+
+import com.codahale.metrics.MetricRegistry;
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
 
 /**
- * Interface to collect statistics related to operation failures related to
- * {@link org.apache.cassandra.sidecar.db.schema.SidecarSchema}
+ * Provider for getting {@link HttpMetrics} specific to an endpoint maintained by Sidecar.
  */
-public interface SidecarSchemaStats
+@Singleton
+public class HttpMetricProvider
 {
-    /**
-     * Captures failures of sidecar schema initialization queries, including alter/create schema and prepare
-     */
-    default void captureSchemaInitializationFailed()
-    {
+    private final MetricRegistry metricRegistry;
 
+    @Inject
+    public HttpMetricProvider(MetricRegistry metricRegistry)
+    {
+        this.metricRegistry = Objects.requireNonNull(metricRegistry, "MetricRegistry can not be null");
     }
 
-    /**
-     * Captures failures of sidecar schema modification queries
-     */
-    default void captureSchemaModificationFailed()
+    public HttpMetrics metrics(String meteredRoute)
     {
-
+        return new HttpMetrics(meteredRoute, metricRegistry);
     }
 }

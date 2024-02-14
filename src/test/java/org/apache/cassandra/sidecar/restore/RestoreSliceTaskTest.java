@@ -24,11 +24,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.codahale.metrics.Timer;
 import com.datastax.driver.core.utils.UUIDs;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
@@ -44,15 +47,18 @@ import org.apache.cassandra.sidecar.db.RestoreSlice;
 import org.apache.cassandra.sidecar.db.RestoreSliceDatabaseAccessor;
 import org.apache.cassandra.sidecar.exceptions.RestoreJobException;
 import org.apache.cassandra.sidecar.exceptions.RestoreJobFatalException;
+import org.apache.cassandra.sidecar.metrics.RestoreMetrics;
+import org.apache.cassandra.sidecar.metrics.instance.InstanceMetrics;
+import org.apache.cassandra.sidecar.metrics.instance.InstanceMetricsImpl;
 import org.apache.cassandra.sidecar.server.MainModule;
-import org.apache.cassandra.sidecar.stats.RestoreJobStats;
-import org.apache.cassandra.sidecar.stats.TestRestoreJobStats;
 import org.apache.cassandra.sidecar.utils.SSTableImporter;
 import org.mockito.Mockito;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 import static org.apache.cassandra.sidecar.AssertionUtils.getBlocking;
+import static org.apache.cassandra.sidecar.utils.TestMetricUtils.getMetric;
+import static org.apache.cassandra.sidecar.utils.TestMetricUtils.registry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doReturn;
@@ -68,9 +74,10 @@ class RestoreSliceTaskTest
     private StorageClient storageClient;
     private TaskExecutorPool executorPool;
     private SSTableImporter importer;
-    private TestRestoreJobStats stats;
     private RestoreSliceTask task;
     private RestoreSliceDatabaseAccessor sliceDatabaseAccessor;
+    private InstanceMetrics instanceMetrics;
+    private RestoreMetrics restoreMetrics;
 
     @BeforeEach
     void setup()
@@ -84,11 +91,19 @@ class RestoreSliceTaskTest
         importer = mock(SSTableImporter.class);
         Injector injector = Guice.createInjector(Modules.override(new MainModule()).with(new TestModule()));
         executorPool = injector.getInstance(ExecutorPools.class).internal();
-        stats = new TestRestoreJobStats();
         sliceDatabaseAccessor = mock(RestoreSliceDatabaseAccessor.class);
+        instanceMetrics = new InstanceMetricsImpl(registry(1));
+        restoreMetrics = new RestoreMetrics(registry());
         task = new TestRestoreSliceTask(restoreSlice, storageClient,
                                         executorPool, importer, 0,
-                                        sliceDatabaseAccessor, stats);
+                                        sliceDatabaseAccessor, instanceMetrics, restoreMetrics);
+    }
+
+    @AfterEach
+    void cleanup()
+    {
+        registry().removeMatching((name, metric) -> true);
+        registry(1).removeMatching((name, metric) -> true);
     }
 
     @Test
@@ -102,16 +117,36 @@ class RestoreSliceTaskTest
         getBlocking(promise.future()); // no error is thrown
 
         // assert on the stats collected
-        assertThat(stats.sliceReplicationTimes).hasSize(1);
-        assertThat(stats.sliceReplicationTimes.get(0)).isPositive();
-        assertThat(stats.sliceDownloadTimes).hasSize(1);
-        assertThat(stats.sliceDownloadTimes.get(0)).isPositive();
-        assertThat(stats.sliceUnzipTimes).hasSize(1);
-        assertThat(stats.sliceUnzipTimes.get(0)).isPositive();
-        assertThat(stats.sliceValidationTimes).hasSize(1);
-        assertThat(stats.sliceValidationTimes.get(0)).isPositive();
-        assertThat(stats.sliceImportTimes).hasSize(1);
-        assertThat(stats.sliceImportTimes.get(0)).isPositive();
+        assertThat(getMetric("sidecar.restore.slice_replication_time", Timer.class)
+                   .getSnapshot()
+                   .size()).isOne();
+        assertThat(getMetric("sidecar.restore.slice_replication_time", Timer.class)
+                   .getSnapshot()
+                   .getValues()[0]).isPositive();
+        assertThat(getMetric(1, "sidecar.instance.restore.slice_download_time", Timer.class)
+                   .getSnapshot()
+                   .size()).isOne();
+        assertThat(getMetric(1, "sidecar.instance.restore.slice_download_time", Timer.class)
+                   .getSnapshot()
+                   .getValues()[0]).isPositive();
+        assertThat(getMetric(1, "sidecar.instance.restore.slice_unzip_time", Timer.class)
+                   .getSnapshot()
+                   .size()).isOne();
+        assertThat(getMetric(1, "sidecar.instance.restore.slice_unzip_time", Timer.class)
+                   .getSnapshot()
+                   .getValues()[0]).isPositive();
+        assertThat(getMetric(1, "sidecar.instance.restore.slice_validation_time", Timer.class)
+                   .getSnapshot()
+                   .size()).isOne();
+        assertThat(getMetric(1, "sidecar.instance.restore.slice_validation_time", Timer.class)
+                   .getSnapshot()
+                   .getValues()[0]).isPositive();
+        assertThat(getMetric(1, "sidecar.instance.restore.slice_import_time", Timer.class)
+                   .getSnapshot()
+                   .size()).isOne();
+        assertThat(getMetric(1, "sidecar.instance.restore.slice_import_time", Timer.class)
+                   .getSnapshot()
+                   .getValues()[0]).isPositive();
     }
 
     @Test
@@ -126,10 +161,11 @@ class RestoreSliceTaskTest
         task.handle(promise);
         getBlocking(promise.future()); // no error is thrown
 
-        assertThat(stats.sliceReplicationTimes)
+        assertThat(getMetric("sidecar.restore.slice_replication_time", Timer.class)
+                   .getCount())
         .describedAs("The replication time of the slice has been captured when confirming the existence." +
                      "It should not be captured again in this run.")
-        .isEmpty();
+        .isZero();
     }
 
     @Test
@@ -225,23 +261,25 @@ class RestoreSliceTaskTest
     static class TestRestoreSliceTask extends RestoreSliceTask
     {
         private final RestoreSlice slice;
-        private final RestoreJobStats stats;
+        private final InstanceMetrics instanceMetrics;
 
         public TestRestoreSliceTask(RestoreSlice slice, StorageClient s3Client, TaskExecutorPool executorPool,
                                     SSTableImporter importer, double requiredUsableSpacePercentage,
-                                    RestoreSliceDatabaseAccessor sliceDatabaseAccessor, RestoreJobStats stats)
+                                    RestoreSliceDatabaseAccessor sliceDatabaseAccessor, InstanceMetrics instanceMetrics,
+                                    RestoreMetrics restoreMetrics)
         {
-            super(slice, s3Client, executorPool, importer, requiredUsableSpacePercentage, sliceDatabaseAccessor, stats);
+            super(slice, s3Client, executorPool, importer, requiredUsableSpacePercentage,
+                  sliceDatabaseAccessor, instanceMetrics, restoreMetrics);
             this.slice = slice;
-            this.stats = stats;
+            this.instanceMetrics = instanceMetrics;
         }
 
         @Override
         void unzipAndImport(Promise<RestoreSlice> event, File file, Runnable onSuccessCommit)
         {
-            stats.captureSliceUnzipTime(1, 123L);
-            stats.captureSliceValidationTime(1, 123L);
-            stats.captureSliceImportTime(1, 123L);
+            instanceMetrics.restore().recordSliceUnzipTime(123, TimeUnit.MILLISECONDS);
+            instanceMetrics.restore().recordSliceValidationTime(123, TimeUnit.MILLISECONDS);
+            instanceMetrics.restore().recordSliceImportTime(123, TimeUnit.MILLISECONDS);
             slice.completeImportPhase();
             event.tryComplete(slice);
             if (onSuccessCommit != null)

@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -40,7 +41,9 @@ import org.apache.cassandra.sidecar.db.RestoreSliceDatabaseAccessor;
 import org.apache.cassandra.sidecar.db.schema.SidecarSchema;
 import org.apache.cassandra.sidecar.exceptions.RestoreJobException;
 import org.apache.cassandra.sidecar.exceptions.RestoreJobExceptions;
-import org.apache.cassandra.sidecar.stats.RestoreJobStats;
+import org.apache.cassandra.sidecar.metrics.RestoreMetrics;
+import org.apache.cassandra.sidecar.metrics.instance.InstanceMetricProvider;
+import org.apache.cassandra.sidecar.metrics.instance.InstanceMetrics;
 import org.apache.cassandra.sidecar.tasks.PeriodicTask;
 import org.apache.cassandra.sidecar.utils.SSTableImporter;
 
@@ -60,7 +63,8 @@ public class RestoreProcessor implements PeriodicTask
     private final SliceQueue sliceQueue = new SliceQueue();
     private final double requiredUsableSpacePercentage; // value range: [0.0, 1.0)
     private final RestoreSliceDatabaseAccessor sliceDatabaseAccessor;
-    private final RestoreJobStats stats;
+    private final InstanceMetricProvider instanceMetricProvider;
+    private final RestoreMetrics restoreMetrics;
     private volatile boolean isClosed = false; // OK to run close twice, so relax the control to volatile
 
     @Inject
@@ -70,7 +74,8 @@ public class RestoreProcessor implements PeriodicTask
                             StorageClientPool s3ClientPool,
                             SSTableImporter importer,
                             RestoreSliceDatabaseAccessor sliceDatabaseAccessor,
-                            RestoreJobStats stats)
+                            InstanceMetricProvider instanceMetricProvider,
+                            RestoreMetrics restoreMetrics)
     {
         this.pool = executorPools.internal();
         this.s3ClientPool = s3ClientPool;
@@ -81,7 +86,8 @@ public class RestoreProcessor implements PeriodicTask
         = config.serviceConfiguration().ssTableUploadConfiguration().minimumSpacePercentageRequired() / 100.0;
         this.importer = importer;
         this.sliceDatabaseAccessor = sliceDatabaseAccessor;
-        this.stats = stats;
+        this.instanceMetricProvider = instanceMetricProvider;
+        this.restoreMetrics = restoreMetrics;
     }
 
     /**
@@ -129,14 +135,17 @@ public class RestoreProcessor implements PeriodicTask
 
             // capture the new queue length after polling
             sliceQueue.captureImportQueueLength();
+            InstanceMetrics instanceMetrics = instanceMetricProvider.metrics(slice.owner().id());
             pool.executeBlocking(slice.toAsyncTask(s3ClientPool, pool, importer,
                                                    requiredUsableSpacePercentage,
-                                                   sliceDatabaseAccessor, stats),
+                                                   sliceDatabaseAccessor, instanceMetrics,
+                                                   restoreMetrics),
                                  false) // unordered
             .onSuccess(restoreSlice -> {
                 if (slice.hasImported())
                 {
-                    stats.captureSliceCompletionTime(slice.owner().id(), System.nanoTime() - slice.creationTimeNanos());
+                    instanceMetrics.restore().recordSliceCompletionTime(System.nanoTime() - slice.creationTimeNanos(),
+                                                                        TimeUnit.NANOSECONDS);
                     LOGGER.info("Slice completes successfully. sliceKey={}", slice.key());
                     slice.complete();
                 }
@@ -267,13 +276,17 @@ public class RestoreProcessor implements PeriodicTask
         void captureImportQueueLength()
         {
             activeSliceCounterPerInstance.forEach((instanceId, counter) ->
-                                                  stats.captureSliceImportQueueLength(instanceId, counter.get()));
+                                                  instanceMetricProvider.metrics(instanceId)
+                                                                        .restore()
+                                                                        .recordSliceImportQueueLength(counter.get()));
         }
 
         void capturePendingSliceCount()
         {
             sliceCounterPerInstance.forEach((instanceId, counter) ->
-                                            stats.capturePendingSliceCount(instanceId, counter.get()));
+                                            instanceMetricProvider.metrics(instanceId)
+                                                                  .restore()
+                                                                  .recordPendingSliceCount(counter.get()));
         }
 
         private void increment(Map<Integer, AtomicInteger> map, RestoreSlice slice)

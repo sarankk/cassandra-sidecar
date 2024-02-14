@@ -22,6 +22,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
@@ -42,8 +43,9 @@ import org.apache.cassandra.sidecar.exceptions.RestoreJobException;
 import org.apache.cassandra.sidecar.exceptions.RestoreJobExceptions;
 import org.apache.cassandra.sidecar.exceptions.RestoreJobFatalException;
 import org.apache.cassandra.sidecar.exceptions.ThrowableUtils;
-import org.apache.cassandra.sidecar.stats.RestoreJobStats;
-import org.apache.cassandra.sidecar.stats.Timer;
+import org.apache.cassandra.sidecar.metrics.RestoreMetrics;
+import org.apache.cassandra.sidecar.metrics.Timer;
+import org.apache.cassandra.sidecar.metrics.instance.InstanceMetrics;
 import org.apache.cassandra.sidecar.utils.SSTableImporter;
 import software.amazon.awssdk.core.exception.ApiCallTimeoutException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -69,7 +71,8 @@ public class RestoreSliceTask implements Handler<Promise<RestoreSlice>>
     private final SSTableImporter importer;
     private final double requiredUsableSpacePercentage;
     private final RestoreSliceDatabaseAccessor sliceDatabaseAccessor;
-    private final RestoreJobStats stats;
+    private final InstanceMetrics instanceMetrics;
+    private final RestoreMetrics restoreMetrics;
 
     public RestoreSliceTask(RestoreSlice slice,
                             StorageClient s3Client,
@@ -77,7 +80,8 @@ public class RestoreSliceTask implements Handler<Promise<RestoreSlice>>
                             SSTableImporter importer,
                             double requiredUsableSpacePercentage,
                             RestoreSliceDatabaseAccessor sliceDatabaseAccessor,
-                            RestoreJobStats stats)
+                            InstanceMetrics instanceMetrics,
+                            RestoreMetrics restoreMetrics)
     {
         Preconditions.checkArgument(!slice.job().isManagedBySidecar()
                                     || sliceDatabaseAccessor != null,
@@ -88,7 +92,8 @@ public class RestoreSliceTask implements Handler<Promise<RestoreSlice>>
         this.importer = importer;
         this.requiredUsableSpacePercentage = requiredUsableSpacePercentage;
         this.sliceDatabaseAccessor = sliceDatabaseAccessor;
-        this.stats = stats;
+        this.instanceMetrics = instanceMetrics;
+        this.restoreMetrics = restoreMetrics;
     }
 
     @Override
@@ -181,7 +186,8 @@ public class RestoreSliceTask implements Handler<Promise<RestoreSlice>>
         .whenComplete((resp, cause) -> {
             if (cause == null)
             {
-                stats.captureSliceReplicationTime(System.nanoTime() - slice.creationTimeNanos());
+                restoreMetrics.recordSliceReplicationTime(System.nanoTime() - slice.creationTimeNanos(),
+                                                          TimeUnit.NANOSECONDS);
                 slice.setExistsOnS3();
                 return;
             }
@@ -205,7 +211,7 @@ public class RestoreSliceTask implements Handler<Promise<RestoreSlice>>
                     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadObject.html#API_HeadObject_RequestSyntax
                     event.tryFail(RestoreJobExceptions.ofFatalSlice("Object checksum mismatched",
                                                                     slice, s3Exception));
-                    stats.captureSliceChecksumMismatch(slice.owner().id());
+                    instanceMetrics.restore().recordSliceChecksumMismatch();
                 }
                 else if (s3Exception.statusCode() == 403)
                 {
@@ -213,7 +219,7 @@ public class RestoreSliceTask implements Handler<Promise<RestoreSlice>>
                     // There might be permission issue on accessing the object.
                     event.tryFail(RestoreJobExceptions.ofFatalSlice("Object access is forbidden",
                                                                     slice, s3Exception));
-                    stats.captureTokenUnauthorized();
+                    restoreMetrics.recordTokenUnauthorized();
                 }
                 else if (s3Exception.statusCode() == 400 &&
                          s3Exception.getMessage().contains("token has expired"))
@@ -221,7 +227,7 @@ public class RestoreSliceTask implements Handler<Promise<RestoreSlice>>
                     // Fail the job if 400, token has expired.
                     // https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html#ErrorCodeList
                     event.tryFail(RestoreJobExceptions.ofFatalSlice("Token has expired", slice, s3Exception));
-                    stats.captureTokenExpired();
+                    restoreMetrics.recordTokenExpired();
                 }
                 else
                 {
@@ -248,7 +254,7 @@ public class RestoreSliceTask implements Handler<Promise<RestoreSlice>>
         if (slice.downloadAttempt() > 0)
         {
             LOGGER.debug("Retrying downloading slice. sliceKey={}", slice.key());
-            stats.captureSliceDownloadRetry(slice.owner().id());
+            instanceMetrics.restore().recordSliceDownloadRetry();
         }
 
         LOGGER.info("Begin downloading restore slice. sliceKey={}", slice.key());
@@ -261,7 +267,7 @@ public class RestoreSliceTask implements Handler<Promise<RestoreSlice>>
                 if (ThrowableUtils.getCause(cause, ApiCallTimeoutException.class) != null)
                 {
                     LOGGER.warn("Downloading restore slice times out. sliceKey={}", slice.key());
-                    stats.captureSliceDownloadTimeout(slice.owner().id());
+                    instanceMetrics.restore().recordSliceDownloadTimeout();
                 }
                 event.tryFail(RestoreJobExceptions.ofFatalSlice("Unrecoverable error when downloading object",
                                                                 slice, cause));
@@ -270,10 +276,9 @@ public class RestoreSliceTask implements Handler<Promise<RestoreSlice>>
 
         return Timer.measureTimeTaken(future, duration -> {
             LOGGER.info("Finish downloading restore slice. sliceKey={}", slice.key());
-            stats.captureSliceDownloaded(slice.owner().id(),
-                                         slice.compressedSize(),
-                                         slice.uncompressedSize(),
-                                         duration);
+            instanceMetrics.restore().recordSliceDownloadTime(duration, TimeUnit.NANOSECONDS);
+            instanceMetrics.restore().recordSliceCompressedSize(slice.compressedSize());
+            instanceMetrics.restore().recordSliceUncompressedSize(slice.uncompressedSize());
         });
     }
 
@@ -369,7 +374,9 @@ public class RestoreSliceTask implements Handler<Promise<RestoreSlice>>
             }
         }, false); // unordered
 
-        return Timer.measureTimeTaken(future, d -> stats.captureSliceUnzipTime(slice.owner().id(), d));
+        return Timer.measureTimeTaken(future, d -> instanceMetrics
+                                                   .restore()
+                                                   .recordSliceUnzipTime(d, TimeUnit.NANOSECONDS));
     }
 
     // Validate integrity of the files from the zip. The failures from any step is fatal and not retryable.
@@ -417,7 +424,7 @@ public class RestoreSliceTask implements Handler<Promise<RestoreSlice>>
             {
                 if (file.getName().endsWith("-Data.db"))
                 {
-                    stats.captureSSTableDataComponentSize(slice.owner().id(), file.length());
+                    instanceMetrics.restore().recordDataSSTableComponentSize(file.length());
                 }
             }
 
@@ -425,7 +432,9 @@ public class RestoreSliceTask implements Handler<Promise<RestoreSlice>>
             promise.tryComplete(directory);
         }, false); // unordered
 
-        return Timer.measureTimeTaken(future, d -> stats.captureSliceValidationTime(slice.owner().id(), d));
+        return Timer.measureTimeTaken(future, d -> instanceMetrics
+                                                   .restore()
+                                                   .recordSliceValidationTime(d, TimeUnit.NANOSECONDS));
     }
 
     private void compareChecksums(Map<String, String> expectedChecksums, File[] files, Promise<?> promise)
@@ -485,7 +494,8 @@ public class RestoreSliceTask implements Handler<Promise<RestoreSlice>>
         Future<Void> future = importer.scheduleImport(importOptions)
                                       .onSuccess(ignored -> LOGGER.info("Finish committing SSTables. sliceKey={}",
                                                                         slice.key()));
-        return Timer.measureTimeTaken(future, d -> stats.captureSliceImportTime(slice.owner().id(), d));
+        return Timer.measureTimeTaken(future, d -> instanceMetrics.restore()
+                                                                  .recordSliceImportTime(d, TimeUnit.NANOSECONDS));
     }
 
     private boolean failOnCancelled(Promise<?> promise)

@@ -39,11 +39,12 @@ import org.apache.cassandra.sidecar.common.data.RestoreSliceStatus;
 import org.apache.cassandra.sidecar.concurrent.ExecutorPools;
 import org.apache.cassandra.sidecar.exceptions.RestoreJobExceptions;
 import org.apache.cassandra.sidecar.exceptions.RestoreJobFatalException;
+import org.apache.cassandra.sidecar.metrics.RestoreMetrics;
+import org.apache.cassandra.sidecar.metrics.instance.InstanceMetrics;
 import org.apache.cassandra.sidecar.restore.RestoreSliceTask;
 import org.apache.cassandra.sidecar.restore.RestoreSliceTracker;
 import org.apache.cassandra.sidecar.restore.StorageClient;
 import org.apache.cassandra.sidecar.restore.StorageClientPool;
-import org.apache.cassandra.sidecar.stats.RestoreJobStats;
 import org.apache.cassandra.sidecar.utils.SSTableImporter;
 import org.jetbrains.annotations.NotNull;
 
@@ -233,7 +234,8 @@ public class RestoreSlice
                                                       SSTableImporter importer,
                                                       double requiredUsableSpacePercentage,
                                                       RestoreSliceDatabaseAccessor sliceDatabaseAccessor,
-                                                      RestoreJobStats stats)
+                                                      InstanceMetrics instanceMetrics,
+                                                      RestoreMetrics restoreMetrics)
     {
         if (isCancelled)
             return promise -> promise.tryFail(RestoreJobExceptions.ofFatalSlice("Restore slice is cancelled",
@@ -246,7 +248,8 @@ public class RestoreSlice
                                         executorPool, importer,
                                         requiredUsableSpacePercentage,
                                         sliceDatabaseAccessor,
-                                        stats);
+                                        instanceMetrics,
+                                        restoreMetrics);
         }
         catch (IllegalStateException illegalState)
         {

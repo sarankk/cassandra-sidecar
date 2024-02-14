@@ -16,24 +16,23 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.sidecar.stats;
+package org.apache.cassandra.sidecar.metrics.instance;
 
 /**
- * Interface to hold statistics specific to SSTable related operations
+ * Provider for getting instance specific metrics given instance id or host.
  */
-public interface SSTableStats
+public interface InstanceMetricProvider
 {
-    SSTableStats INSTANCE = new SSTableStats()
-    {
-    };
+    /**
+     *
+     * @param instanceId Cassandra instance id
+     * @return {@link InstanceMetrics} associated with provided Cassandra instance id
+     */
+    InstanceMetrics metrics(int instanceId);
 
-    default void onBytesUploaded(long byteCount)
-    {
-        // no op
-    }
-
-    default void onBytesStreamed(long byteCount)
-    {
-        // no op
-    }
+    /**
+     * @param host Cassandra instance host name
+     * @return {@link InstanceMetrics} associated with provided Cassandra instance host name
+     */
+    InstanceMetrics metrics(String host);
 }

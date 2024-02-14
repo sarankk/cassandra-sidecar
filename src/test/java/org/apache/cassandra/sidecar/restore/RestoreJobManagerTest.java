@@ -34,13 +34,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.datastax.driver.core.utils.UUIDs;
+import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
+import com.google.inject.Provides;
+import com.google.inject.Singleton;
+import com.google.inject.util.Modules;
 import io.vertx.core.Vertx;
 import org.apache.cassandra.sidecar.ExecutorPoolsHelper;
 import org.apache.cassandra.sidecar.cluster.instance.InstanceMetadata;
 import org.apache.cassandra.sidecar.concurrent.ExecutorPools;
 import org.apache.cassandra.sidecar.config.RestoreJobConfiguration;
+import org.apache.cassandra.sidecar.config.SidecarConfiguration;
+import org.apache.cassandra.sidecar.config.yaml.MetricsConfigurationImpl;
 import org.apache.cassandra.sidecar.db.RestoreJob;
 import org.apache.cassandra.sidecar.db.RestoreJobTest;
 import org.apache.cassandra.sidecar.db.RestoreSlice;
@@ -66,19 +72,29 @@ class RestoreJobManagerTest
     @BeforeEach
     void setup()
     {
-        Injector injector = Guice.createInjector(new MainModule());
-        vertx = injector.getInstance(Vertx.class);
-        executorPools = ExecutorPoolsHelper.createdSharedTestPool(vertx);
-        RestoreProcessor processor = mock(RestoreProcessor.class);
-        InstanceMetadata instanceMetadata = mock(InstanceMetadata.class);
-        when(instanceMetadata.stagingDir()).thenReturn(testDir.toString());
-
         RestoreJobConfiguration restoreJobConfiguration = mock(RestoreJobConfiguration.class);
         when(restoreJobConfiguration.jobDiscoveryActiveLoopDelayMillis()).thenReturn(0L);
         when(restoreJobConfiguration.jobDiscoveryIdleLoopDelayMillis()).thenReturn(0L);
         when(restoreJobConfiguration.jobDiscoveryRecencyDays()).thenReturn(jobRecencyDays);
         when(restoreJobConfiguration.processMaxConcurrency()).thenReturn(0);
         when(restoreJobConfiguration.restoreJobTablesTtlSeconds()).thenReturn(TimeUnit.DAYS.toSeconds(14) + 1);
+        Injector injector = Guice.createInjector(Modules.override(new MainModule()).with(new AbstractModule()
+        {
+            @Provides
+            @Singleton
+            public SidecarConfiguration sidecarConfiguration()
+            {
+                SidecarConfiguration sidecarConfiguration = mock(SidecarConfiguration.class);
+                when(sidecarConfiguration.metricsConfiguration()).thenReturn(new MetricsConfigurationImpl());
+                when(sidecarConfiguration.restoreJobConfiguration()).thenReturn(restoreJobConfiguration);
+                return sidecarConfiguration;
+            }
+        }));
+        vertx = injector.getInstance(Vertx.class);
+        executorPools = ExecutorPoolsHelper.createdSharedTestPool(vertx);
+        RestoreProcessor processor = mock(RestoreProcessor.class);
+        InstanceMetadata instanceMetadata = mock(InstanceMetadata.class);
+        when(instanceMetadata.stagingDir()).thenReturn(testDir.toString());
 
         manager = new RestoreJobManager(restoreJobConfiguration,
                                         instanceMetadata,

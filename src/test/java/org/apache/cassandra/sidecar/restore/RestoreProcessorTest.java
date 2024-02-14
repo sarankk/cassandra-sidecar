@@ -21,23 +21,29 @@ package org.apache.cassandra.sidecar.restore;
 import java.util.concurrent.CountDownLatch;
 
 import com.google.common.util.concurrent.Uninterruptibles;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.codahale.metrics.Gauge;
+import com.codahale.metrics.Timer;
 import com.datastax.driver.core.utils.UUIDs;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.util.Modules;
 import org.apache.cassandra.sidecar.TestModule;
+import org.apache.cassandra.sidecar.cluster.InstancesConfig;
+import org.apache.cassandra.sidecar.cluster.instance.InstanceMetadata;
 import org.apache.cassandra.sidecar.db.RestoreSlice;
 import org.apache.cassandra.sidecar.db.schema.SidecarSchema;
+import org.apache.cassandra.sidecar.metrics.instance.InstanceMetricProvider;
 import org.apache.cassandra.sidecar.server.MainModule;
-import org.apache.cassandra.sidecar.stats.RestoreJobStats;
-import org.apache.cassandra.sidecar.stats.TestRestoreJobStats;
 import org.apache.cassandra.sidecar.tasks.PeriodicTaskExecutor;
 import org.mockito.Mockito;
 
 import static org.apache.cassandra.sidecar.AssertionUtils.loopAssert;
+import static org.apache.cassandra.sidecar.utils.TestMetricUtils.getMetric;
+import static org.apache.cassandra.sidecar.utils.TestMetricUtils.registry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
@@ -50,19 +56,33 @@ class RestoreProcessorTest
     private RestoreProcessor processor;
     private SidecarSchema sidecarSchema;
     private PeriodicTaskExecutor periodicTaskExecutor;
-    private TestRestoreJobStats stats;
+    private InstancesConfig instancesConfig;
 
     @BeforeEach
     void setup()
     {
         Injector injector = Guice.createInjector(Modules.override(new MainModule()).with(new TestModule()));
+        instancesConfig = injector.getInstance(InstancesConfig.class);
         sidecarSchema = mock(SidecarSchema.class);
         RestoreProcessor delegate = injector.getInstance(RestoreProcessor.class);
         processor = spy(delegate);
         when(processor.delay()).thenReturn(100L);
         when(processor.sidecarSchema()).thenReturn(sidecarSchema);
         periodicTaskExecutor = injector.getInstance(PeriodicTaskExecutor.class);
-        stats = (TestRestoreJobStats) injector.getInstance(RestoreJobStats.class);
+
+        InstanceMetricProvider instanceMetricProvider = injector.getInstance(InstanceMetricProvider.class);
+        instancesConfig.instances().forEach(instance -> {
+            instanceMetricProvider.metrics(instance.id());
+        });
+    }
+
+    @AfterEach
+    void cleanUp()
+    {
+        registry().removeMatching((name, metric) -> true);
+        instancesConfig.instances().forEach(instance -> {
+            registry(instance.id()).removeMatching((name, metric) -> true);
+        });
     }
 
     @Test
@@ -74,7 +94,6 @@ class RestoreProcessorTest
         int concurrency = TestModule.RESTORE_MAX_CONCURRENCY;
         periodicTaskExecutor.schedule(processor);
 
-        assertThat(stats.sliceImportQueueLengths).isEmpty();
         assertThat(processor.activeSlices()).isZero();
 
         CountDownLatch latch = new CountDownLatch(1);
@@ -88,16 +107,14 @@ class RestoreProcessorTest
         // assert before any slice can be completed
         loopAssert(3, () -> {
             // expect slice import queue has the size of concurrency
-            assertThat(stats.sliceImportQueueLengths).isNotEmpty();
-            int lastValueIndex = stats.sliceImportQueueLengths.size() - 1;
-            assertThat(stats.sliceImportQueueLengths.get(lastValueIndex))
-            .isLessThanOrEqualTo(concurrency);
+            long lastImportQueueLengthBeforeSliceCompletion = lastImportQueueLength();
+            assertThat(lastImportQueueLengthBeforeSliceCompletion).isPositive();
+            assertThat(lastImportQueueLengthBeforeSliceCompletion).isLessThanOrEqualTo(concurrency);
 
             // expect the pending slices count equals to "total - concurrency"
-            assertThat(stats.pendingSliceCounts).isNotEmpty();
-            lastValueIndex = stats.pendingSliceCounts.size() - 1;
-            assertThat(stats.pendingSliceCounts.get(lastValueIndex))
-            .isLessThanOrEqualTo(total - concurrency);
+            long lastPendingSliceCountBeforeSliceCompletion = lastPendingSliceCount();
+            assertThat(lastPendingSliceCountBeforeSliceCompletion).isPositive();
+            assertThat(lastPendingSliceCountBeforeSliceCompletion).isLessThanOrEqualTo(total - concurrency);
 
             assertThat(processor.activeSlices()).isEqualTo(concurrency);
         });
@@ -117,32 +134,16 @@ class RestoreProcessorTest
         // and the pending slices should be back to 0
         loopAssert(3, () -> {
             assertThat(processor.activeSlices()).isZero();
-            int lastValueIndex = stats.sliceImportQueueLengths.size() - 1;
-            assertThat(stats.sliceImportQueueLengths.get(lastValueIndex)).isZero();
-            lastValueIndex = stats.pendingSliceCounts.size() - 1;
-            assertThat(stats.pendingSliceCounts.get(lastValueIndex)).isZero();
+            long lastImportQueueLengthAfterSliceCompletion = lastImportQueueLength();
+            assertThat(lastImportQueueLengthAfterSliceCompletion).isZero();
+            long lastPendingSliceCountAfterSliceCompletion = lastPendingSliceCount();
+            assertThat(lastPendingSliceCountAfterSliceCompletion).isZero();
         });
 
-        // assert on the historic captured values
-        for (long historicQueueSize : stats.sliceImportQueueLengths)
-        {
-            assertThat(historicQueueSize)
-            .describedAs("All captured queue size should be in the range of [0, concurrency]")
-            .isNotNegative()
-            .isLessThanOrEqualTo(concurrency);
-        }
-
-        for (long historicPendingCount : stats.pendingSliceCounts)
-        {
-            assertThat(historicPendingCount)
-            .describedAs("All captured counts should be in the range of [0, total - concurrency]")
-            .isNotNegative()
-            .isLessThanOrEqualTo(total - concurrency);
-        }
-
         // all slices complete successfully
-        assertThat(stats.sliceCompletionTimes).hasSize(total);
-        for (long sliceCompleteDuration : stats.sliceCompletionTimes)
+        long[] sliceCompletionTimes = sliceCompletionTimes();
+        assertThat(sliceCompletionTimes).hasSize(total);
+        for (long sliceCompleteDuration : sliceCompletionTimes)
         {
             assertThat(sliceCompleteDuration).isPositive();
         }
@@ -174,12 +175,33 @@ class RestoreProcessorTest
     {
         RestoreSlice slice = mock(RestoreSlice.class, Mockito.RETURNS_DEEP_STUBS);
         when(slice.jobId()).thenReturn(UUIDs.timeBased());
-        when(slice.owner().id()).thenReturn(1);
-        when(slice.toAsyncTask(any(), any(), any(), anyDouble(), any(), any())).thenReturn(promise -> {
+        InstanceMetadata instanceMetadata = mock(InstanceMetadata.class);
+        when(instanceMetadata.id()).thenReturn(1);
+        when(slice.owner()).thenReturn(instanceMetadata);
+        when(slice.toAsyncTask(any(), any(), any(), anyDouble(), any(), any(), any())).thenReturn(promise -> {
             Uninterruptibles.awaitUninterruptibly(latch);
             promise.complete(slice);
         });
         when(slice.hasImported()).thenReturn(true);
         return slice;
+    }
+
+    private Long lastImportQueueLength()
+    {
+        return (Long) getMetric(1, "sidecar.instance.restore.slice_import_queue_length", Gauge.class)
+                      .getValue();
+    }
+
+    private Long lastPendingSliceCount()
+    {
+        return (Long) getMetric(1, "sidecar.instance.restore.pending_slice_count", Gauge.class)
+                      .getValue();
+    }
+
+    private long[] sliceCompletionTimes()
+    {
+        return getMetric(1, "sidecar.instance.restore.slice_completion_time", Timer.class)
+               .getSnapshot()
+               .getValues();
     }
 }

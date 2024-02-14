@@ -29,6 +29,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.codahale.metrics.Gauge;
+import com.codahale.metrics.Meter;
+import com.codahale.metrics.Timer;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.util.Modules;
@@ -43,7 +46,9 @@ import org.apache.cassandra.sidecar.server.MainModule;
 import org.apache.cassandra.sidecar.server.Server;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.apache.cassandra.sidecar.utils.TestMetricUtils.getMetric;
+import static org.apache.cassandra.sidecar.utils.TestMetricUtils.registry;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Test rate limiting stream requests
@@ -73,6 +78,8 @@ public class ThrottleTest
     void tearDown() throws InterruptedException
     {
         CountDownLatch closeLatch = new CountDownLatch(1);
+        registry().removeMatching((name, metric) -> true);
+        registry(1).removeMatching((name, metric) -> true);
         server.close().onSuccess(res -> closeLatch.countDown());
         if (closeLatch.await(60, SECONDS))
             logger.info("Close event received before timeout.");
@@ -92,14 +99,18 @@ public class ThrottleTest
         }
 
         HttpResponse response = blockingClientRequest(testRoute);
-        assertEquals(HttpResponseStatus.TOO_MANY_REQUESTS.code(), response.statusCode());
+        assertThat(response.statusCode()).isEqualTo(HttpResponseStatus.TOO_MANY_REQUESTS.code());
+        assertRateLimitedMetricsRecorded();
 
         long secsToWait = Long.parseLong(response.getHeader("Retry-After"));
         Thread.sleep(SECONDS.toMillis(secsToWait));
 
         HttpResponse finalResp = blockingClientRequest(testRoute);
-        assertEquals(HttpResponseStatus.OK.code(), finalResp.statusCode());
-        assertEquals("data", finalResp.bodyAsString());
+        assertThat(finalResp.statusCode()).isEqualTo(HttpResponseStatus.OK.code());
+        assertThat(finalResp.bodyAsString()).isEqualTo("data");
+        vertx.setTimer(100, v -> {
+            assertBytesStreamedMetricsRecorded(4L, 4L);
+        });
     }
 
     private void unblockingClientRequest(String route)
@@ -121,5 +132,29 @@ public class ThrottleTest
               .as(BodyCodec.buffer())
               .send(resp -> future.complete(resp.result()));
         return future.get();
+    }
+
+    private void assertRateLimitedMetricsRecorded()
+    {
+        assertThat(getMetric(1, "sidecar.instance.stream.component=db.rate_limited_calls_429", Meter.class)
+                   .getCount()).isGreaterThanOrEqualTo(1);
+        assertThat(getMetric(1, "sidecar.instance.stream.component=db.429_wait_time", Timer.class)
+                   .getSnapshot()
+                   .getValues()
+                   .length).isGreaterThanOrEqualTo(1);
+        assertThat(getMetric(1, "sidecar.instance.stream.component=db.429_wait_time", Timer.class)
+                   .getSnapshot()
+                   .getValues()[0]).isPositive();
+    }
+
+    private void assertBytesStreamedMetricsRecorded(long expected, long totalExpected)
+    {
+        assertThat((Long) getMetric(1, "sidecar.instance.stream.component=db.bytes_streamed", Gauge.class)
+                          .getValue()).isEqualTo(expected);
+        assertThat((Long) getMetric(1, "sidecar.instance.stream.total_bytes_streamed", Gauge.class)
+                          .getValue()).isEqualTo(totalExpected);
+        assertThat(getMetric(1, "sidecar.instance.stream.component=db.time_taken_for_sendfile", Timer.class)
+                   .getSnapshot()
+                   .getValues()[0]).isPositive();
     }
 }

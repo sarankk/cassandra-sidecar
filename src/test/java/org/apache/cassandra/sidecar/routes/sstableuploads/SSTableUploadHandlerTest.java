@@ -32,6 +32,8 @@ import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
+import com.codahale.metrics.Gauge;
+import com.codahale.metrics.Meter;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.buffer.Buffer;
@@ -60,6 +62,7 @@ import static java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE;
 import static java.nio.file.attribute.PosixFilePermission.OWNER_READ;
 import static java.nio.file.attribute.PosixFilePermission.OWNER_WRITE;
 import static org.apache.cassandra.sidecar.utils.TestFileUtils.prepareTestFile;
+import static org.apache.cassandra.sidecar.utils.TestMetricUtils.getMetric;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
@@ -410,6 +413,16 @@ class SSTableUploadHandlerTest extends BaseUploadsHandlerTest
 
             HttpResponse<Buffer> httpResponse = response.result();
             assertThat(httpResponse.statusCode()).isEqualTo(expectedRetCode);
+            if (expectedRetCode == HttpResponseStatus.INSUFFICIENT_STORAGE.code())
+            {
+                assertThat(getMetric(1, "sidecar.instance.upload.component=db.disk_usage_high_errors", Meter.class)
+                           .getCount()).isOne();
+            }
+            if (expectedRetCode == HttpResponseStatus.TOO_MANY_REQUESTS.code())
+            {
+                assertThat(getMetric(1, "sidecar.instance.upload.component=db.rate_limited_calls_429", Meter.class)
+                           .getCount()).isOne();
+            }
 
             if (responseValidator != null)
             {
@@ -421,6 +434,16 @@ class SSTableUploadHandlerTest extends BaseUploadsHandlerTest
                 Path targetFilePath = Paths.get(SnapshotUtils.makeStagingDir(canonicalTemporaryPath),
                                                 uploadId, keyspace, tableName, targetFileName);
                 assertThat(Files.exists(targetFilePath)).isTrue();
+                try
+                {
+                    long expected = Files.size(targetFilePath);
+                    assertBytesUploadedMetricsRecorded(expected, expected);
+                }
+                catch (IOException e)
+                {
+                    context.failNow(e);
+                    return;
+                }
             }
 
             if (latch != null)
@@ -433,5 +456,13 @@ class SSTableUploadHandlerTest extends BaseUploadsHandlerTest
             }
             client.close();
         });
+    }
+
+    private void assertBytesUploadedMetricsRecorded(long expected, long expectedTotal)
+    {
+        assertThat((Long) getMetric(1, "sidecar.instance.upload.component=db.bytes_uploaded", Gauge.class)
+                          .getValue()).isEqualTo(expected);
+        assertThat((Long) getMetric(1, "sidecar.instance.upload.total_bytes_uploaded", Gauge.class)
+                          .getValue()).isEqualTo(expectedTotal);
     }
 }

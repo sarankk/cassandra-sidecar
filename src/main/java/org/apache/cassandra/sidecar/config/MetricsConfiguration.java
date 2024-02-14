@@ -16,19 +16,20 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.sidecar.stats;
+package org.apache.cassandra.sidecar.config;
 
 /**
- * Interface to collect statistics related to main sidecar process
+ * Configuration needed for capturing metrics.
  */
-public interface SidecarStats
+public interface MetricsConfiguration
 {
-    SidecarStats INSTANCE = new SidecarStats()
-    {
-    };
+    /**
+     * @return global registry name to be used for registering sidecar metrics
+     */
+    String registryName();
 
-    default SSTableStats ssTableStats()
-    {
-        return SSTableStats.INSTANCE;
-    }
+    /**
+     * @return configuration needed for capturing metrics released by Vert.x framework.
+     */
+    VertxMetricsConfiguration vertxConfiguration();
 }
