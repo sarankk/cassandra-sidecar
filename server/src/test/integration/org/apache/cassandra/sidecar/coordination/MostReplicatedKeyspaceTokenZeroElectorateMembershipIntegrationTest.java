@@ -167,7 +167,7 @@ class MostReplicatedKeyspaceTokenZeroElectorateMembershipIntegrationTest
         {
             List<InetSocketAddress> address = buildContactList(instance);
             CQLSessionProvider sessionProvider =
-            new CQLSessionProviderImpl(address, address, 500, instance.config().localDatacenter(), 0, SharedExecutorNettyOptions.INSTANCE);
+            new CQLSessionProviderImpl(vertx, address, address, 500, instance.config().localDatacenter(), 0, SharedExecutorNettyOptions.INSTANCE);
             InstancesConfig instancesConfig = buildInstancesConfig(instance, sessionProvider, metricRegistryProvider);
             result.add(new MostReplicatedKeyspaceTokenZeroElectorateMembership(instancesConfig, sessionProvider, CONFIG));
         }

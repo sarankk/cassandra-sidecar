@@ -51,6 +51,7 @@ import com.datastax.driver.core.policies.LoadBalancingPolicy;
 import com.datastax.driver.core.policies.ReconnectionPolicy;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
+import io.vertx.core.Vertx;
 import org.apache.cassandra.sidecar.cluster.driver.SidecarLoadBalancingPolicy;
 import org.apache.cassandra.sidecar.common.server.CQLSessionProvider;
 import org.apache.cassandra.sidecar.common.server.utils.DriverUtils;
@@ -62,6 +63,8 @@ import org.apache.cassandra.sidecar.exceptions.ConfigurationException;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.VisibleForTesting;
 
+import static org.apache.cassandra.sidecar.server.SidecarServerEvents.ON_CASSANDRA_DRIVER_CLOSED;
+
 /**
  * Provides connections to the local Cassandra cluster as defined in the Configuration. Currently, it only supports
  * returning the local connection.
@@ -69,6 +72,7 @@ import org.jetbrains.annotations.VisibleForTesting;
 public class CQLSessionProviderImpl implements CQLSessionProvider
 {
     private static final Logger logger = LoggerFactory.getLogger(CQLSessionProviderImpl.class);
+    private final Vertx vertx;
     private final List<InetSocketAddress> contactPoints;
     private final int numAdditionalConnections;
     private final String localDc;
@@ -83,14 +87,16 @@ public class CQLSessionProviderImpl implements CQLSessionProvider
     private volatile Session session;
 
     @VisibleForTesting
-    public CQLSessionProviderImpl(List<InetSocketAddress> contactPoints,
+    public CQLSessionProviderImpl(Vertx vertx,
+                                  List<InetSocketAddress> contactPoints,
                                   List<InetSocketAddress> localInstances,
                                   int healthCheckFrequencyMillis,
                                   String localDc,
                                   int numAdditionalConnections,
                                   NettyOptions options)
     {
-        this(contactPoints,
+        this(vertx,
+             contactPoints,
              localInstances,
              healthCheckFrequencyMillis,
              localDc,
@@ -102,7 +108,8 @@ public class CQLSessionProviderImpl implements CQLSessionProvider
     }
 
     @VisibleForTesting
-    public CQLSessionProviderImpl(List<InetSocketAddress> contactPoints,
+    public CQLSessionProviderImpl(Vertx vertx,
+                                  List<InetSocketAddress> contactPoints,
                                   List<InetSocketAddress> localInstances,
                                   int healthCheckFrequencyMillis,
                                   String localDc,
@@ -112,6 +119,7 @@ public class CQLSessionProviderImpl implements CQLSessionProvider
                                   SslConfiguration sslConfiguration,
                                   NettyOptions options)
     {
+        this.vertx = vertx;
         this.contactPoints = contactPoints;
         this.localInstances = localInstances;
         this.localDc = localDc;
@@ -124,10 +132,12 @@ public class CQLSessionProviderImpl implements CQLSessionProvider
         this.driverUtils = new DriverUtils();
     }
 
-    public CQLSessionProviderImpl(SidecarConfiguration configuration,
+    public CQLSessionProviderImpl(Vertx vertx,
+                                  SidecarConfiguration configuration,
                                   NettyOptions options,
                                   DriverUtils driverUtils)
     {
+        this.vertx = vertx;
         this.driverUtils = driverUtils;
         DriverConfiguration driverConfiguration = configuration.driverConfiguration();
         this.contactPoints = driverConfiguration.contactPoints();
@@ -258,6 +268,7 @@ public class CQLSessionProviderImpl implements CQLSessionProvider
             try
             {
                 localSession.getCluster().closeAsync().get(1, TimeUnit.MINUTES);
+                vertx.eventBus().publish(ON_CASSANDRA_DRIVER_CLOSED.address(), null);
             }
             catch (InterruptedException e)
             {

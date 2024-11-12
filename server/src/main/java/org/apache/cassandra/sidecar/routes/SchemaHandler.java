@@ -17,31 +17,33 @@
  */
 package org.apache.cassandra.sidecar.routes;
 
-import com.datastax.driver.core.KeyspaceMetadata;
+import java.util.Set;
+
+import com.google.common.collect.ImmutableSet;
+
 import com.datastax.driver.core.Metadata;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.Future;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.net.SocketAddress;
+import io.vertx.ext.auth.authorization.Authorization;
 import io.vertx.ext.web.RoutingContext;
+import org.apache.cassandra.sidecar.acl.authorization.SidecarActions;
+import org.apache.cassandra.sidecar.acl.authorization.VariableAwareResource;
 import org.apache.cassandra.sidecar.cluster.CassandraAdapterDelegate;
 import org.apache.cassandra.sidecar.common.response.SchemaResponse;
-import org.apache.cassandra.sidecar.common.server.data.Name;
 import org.apache.cassandra.sidecar.concurrent.ExecutorPools;
 import org.apache.cassandra.sidecar.utils.CassandraInputValidator;
 import org.apache.cassandra.sidecar.utils.InstanceMetadataFetcher;
-import org.apache.cassandra.sidecar.utils.MetadataUtils;
 
 import static org.apache.cassandra.sidecar.utils.HttpExceptions.cassandraServiceUnavailable;
-import static org.apache.cassandra.sidecar.utils.HttpExceptions.wrapHttpException;
 
 /**
  * The {@link SchemaHandler} class handles schema requests
  */
 @Singleton
-public class SchemaHandler extends AbstractHandler<Name>
+public class SchemaHandler extends AbstractHandler<Void> implements AccessProtected
 {
     /**
      * Constructs a handler with the provided {@code metadataFetcher}
@@ -57,6 +59,13 @@ public class SchemaHandler extends AbstractHandler<Name>
         super(metadataFetcher, executorPools, validator);
     }
 
+    @Override
+    public Set<Authorization> requiredAuthorizations()
+    {
+        String resource = VariableAwareResource.CLUSTER.resource();
+        return ImmutableSet.of(SidecarActions.VIEW_SCHEMA.toAuthorization(resource));
+    }
+
     /**
      * {@inheritDoc}
      */
@@ -65,51 +74,30 @@ public class SchemaHandler extends AbstractHandler<Name>
                                HttpServerRequest httpRequest,
                                String host,
                                SocketAddress remoteAddress,
-                               Name keyspace)
+                               Void request)
     {
         metadata(host)
-        .onFailure(cause -> processFailure(cause, context, host, remoteAddress, keyspace))
-        .onSuccess(metadata -> handleWithMetadata(context, keyspace, metadata));
+        .onFailure(cause -> processFailure(cause, context, host, remoteAddress, request))
+        .onSuccess(metadata -> handleWithMetadata(context, metadata));
     }
 
     /**
      * Handles the request with the Cassandra {@link Metadata metadata}.
      *
      * @param context       the event to handle
-     * @param keyspace      the keyspace parsed from the request
      * @param metadata      the metadata on the connected cluster, including known nodes and schema definitions
      */
-    private void handleWithMetadata(RoutingContext context, Name keyspace, Metadata metadata)
+    private void handleWithMetadata(RoutingContext context, Metadata metadata)
     {
         if (metadata == null)
         {
             // set request as failed and return
-            logger.error("Failed to obtain metadata on the connected cluster for request '{}'", keyspace);
+            logger.error("Failed to obtain metadata on the connected cluster for request");
             context.fail(cassandraServiceUnavailable());
             return;
         }
 
-        if (keyspace == null)
-        {
-            SchemaResponse schemaResponse = new SchemaResponse(metadata.exportSchemaAsString());
-            context.json(schemaResponse);
-            return;
-        }
-
-        // retrieve keyspace metadata
-        KeyspaceMetadata ksMetadata = MetadataUtils.keyspace(metadata, keyspace);
-
-        if (ksMetadata == null)
-        {
-            // set request as failed and return
-            // keyspace does not exist
-            String errorMessage = String.format("Keyspace '%s' does not exist.", keyspace);
-            context.fail(wrapHttpException(HttpResponseStatus.NOT_FOUND, errorMessage));
-            return;
-        }
-
-        SchemaResponse schemaResponse = new SchemaResponse(keyspace.name(),
-                                                           ksMetadata.exportAsString());
+        SchemaResponse schemaResponse = new SchemaResponse(metadata.exportSchemaAsString());
         context.json(schemaResponse);
     }
 
@@ -129,14 +117,11 @@ public class SchemaHandler extends AbstractHandler<Name>
     }
 
     /**
-     * Parses the request parameters
-     *
-     * @param context the event to handle
-     * @return the keyspace parsed from the request
+     * {@inheritDoc}
      */
     @Override
-    protected Name extractParamsOrThrow(RoutingContext context)
+    protected Void extractParamsOrThrow(RoutingContext context)
     {
-        return keyspace(context, false);
+        return null;
     }
 }
