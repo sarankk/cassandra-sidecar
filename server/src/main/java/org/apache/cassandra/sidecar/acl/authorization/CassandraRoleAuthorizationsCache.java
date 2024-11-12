@@ -1,0 +1,63 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.cassandra.sidecar.acl.authorization;
+
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
+import io.vertx.core.Vertx;
+import io.vertx.ext.auth.authorization.Authorization;
+import org.apache.cassandra.sidecar.acl.AuthCache;
+import org.apache.cassandra.sidecar.concurrent.ExecutorPools;
+import org.apache.cassandra.sidecar.config.SidecarConfiguration;
+import org.apache.cassandra.sidecar.db.SystemAuthDatabaseAccessor;
+
+/**
+ * Caches role and authorizations held by it. Entries from system_auth.role_permissions table in Cassandra are processed
+ * into authorizations. All table entries are stored against a unique cache key. Caching against UNIQUE_CACHE_ENTRY is
+ * done to make sure new entries in the table are picked up during cache refreshes.
+ */
+@Singleton
+public class CassandraRoleAuthorizationsCache extends AuthCache<String, Map<String, Set<Authorization>>>
+{
+    private static final String NAME = "role_permissions_cache";
+    protected static final String UNIQUE_CACHE_ENTRY = "unique_cache_entry_key";
+
+    @Inject
+    public CassandraRoleAuthorizationsCache(Vertx vertx,
+                                            ExecutorPools executorPools,
+                                            SidecarConfiguration sidecarConfiguration,
+                                            SystemAuthDatabaseAccessor systemAuthDatabaseAccessor)
+    {
+        super(NAME,
+              vertx,
+              executorPools,
+              k -> systemAuthDatabaseAccessor.getAllRolesAndPermissions(),
+              () -> Collections.singletonMap(UNIQUE_CACHE_ENTRY, systemAuthDatabaseAccessor.getAllRolesAndPermissions()),
+              sidecarConfiguration.accessControlConfiguration().permissionCacheConfiguration());
+    }
+
+    public Set<Authorization> getAuthorizations(String role)
+    {
+        return get(UNIQUE_CACHE_ENTRY).get(role);
+    }
+}

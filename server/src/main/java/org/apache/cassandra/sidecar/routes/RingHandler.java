@@ -18,6 +18,9 @@
 
 package org.apache.cassandra.sidecar.routes;
 
+import java.util.Set;
+
+import com.google.common.collect.ImmutableSet;
 import org.apache.commons.lang3.StringUtils;
 
 import com.google.inject.Inject;
@@ -25,10 +28,11 @@ import com.google.inject.Singleton;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.net.SocketAddress;
+import io.vertx.ext.auth.authorization.Authorization;
 import io.vertx.ext.web.RoutingContext;
+import org.apache.cassandra.sidecar.acl.authorization.SidecarActions;
 import org.apache.cassandra.sidecar.cluster.CassandraAdapterDelegate;
 import org.apache.cassandra.sidecar.common.server.StorageOperations;
-import org.apache.cassandra.sidecar.common.server.data.Name;
 import org.apache.cassandra.sidecar.concurrent.ExecutorPools;
 import org.apache.cassandra.sidecar.utils.CassandraInputValidator;
 import org.apache.cassandra.sidecar.utils.InstanceMetadataFetcher;
@@ -40,7 +44,7 @@ import static org.apache.cassandra.sidecar.utils.HttpExceptions.wrapHttpExceptio
  * A handler that provides ring information for the Cassandra cluster
  */
 @Singleton
-public class RingHandler extends AbstractHandler<Name>
+public class RingHandler extends AbstractHandler<Void> implements AccessProtected
 {
     @Inject
     public RingHandler(InstanceMetadataFetcher metadataFetcher,
@@ -48,6 +52,12 @@ public class RingHandler extends AbstractHandler<Name>
                        ExecutorPools executorPools)
     {
         super(metadataFetcher, executorPools, validator);
+    }
+
+    @Override
+    public Set<Authorization> requiredAuthorizations()
+    {
+        return ImmutableSet.of(SidecarActions.VIEW_CLUSTER.toAuthorization());
     }
 
     /**
@@ -58,7 +68,7 @@ public class RingHandler extends AbstractHandler<Name>
                                HttpServerRequest httpRequest,
                                String host,
                                SocketAddress remoteAddress,
-                               Name keyspace)
+                               Void request)
     {
         CassandraAdapterDelegate delegate = metadataFetcher.delegate(host);
         if (delegate == null)
@@ -76,9 +86,9 @@ public class RingHandler extends AbstractHandler<Name>
         }
 
         executorPools.service()
-                     .executeBlocking(() -> storageOperations.ring(keyspace))
+                     .executeBlocking(() -> storageOperations.ring(null))
                      .onSuccess(context::json)
-                     .onFailure(cause -> processFailure(cause, context, host, remoteAddress, keyspace));
+                     .onFailure(cause -> processFailure(cause, context, host, remoteAddress, request));
     }
 
     @Override
@@ -86,7 +96,7 @@ public class RingHandler extends AbstractHandler<Name>
                                   RoutingContext context,
                                   String host,
                                   SocketAddress remoteAddress,
-                                  Name keyspace)
+                                  Void request)
     {
         if (cause instanceof IllegalArgumentException &&
             StringUtils.contains(cause.getMessage(), ", does not exist"))
@@ -95,15 +105,15 @@ public class RingHandler extends AbstractHandler<Name>
             return;
         }
 
-        super.processFailure(cause, context, host, remoteAddress, keyspace);
+        super.processFailure(cause, context, host, remoteAddress, request);
     }
 
     /**
      * {@inheritDoc}
      */
     @Override
-    protected Name extractParamsOrThrow(RoutingContext context)
+    protected Void extractParamsOrThrow(RoutingContext context)
     {
-        return keyspace(context, false);
+        return null;
     }
 }

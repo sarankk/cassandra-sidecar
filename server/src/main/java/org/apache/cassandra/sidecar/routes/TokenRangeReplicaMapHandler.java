@@ -18,6 +18,9 @@
 
 package org.apache.cassandra.sidecar.routes;
 
+import java.util.Set;
+
+import com.google.common.collect.ImmutableSet;
 import org.apache.commons.lang3.StringUtils;
 
 import com.datastax.driver.core.Metadata;
@@ -26,7 +29,10 @@ import com.google.inject.Singleton;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.net.SocketAddress;
+import io.vertx.ext.auth.authorization.Authorization;
 import io.vertx.ext.web.RoutingContext;
+import org.apache.cassandra.sidecar.acl.authorization.SidecarActions;
+import org.apache.cassandra.sidecar.acl.authorization.VariableAwareResource;
 import org.apache.cassandra.sidecar.cluster.CassandraAdapterDelegate;
 import org.apache.cassandra.sidecar.common.server.StorageOperations;
 import org.apache.cassandra.sidecar.common.server.data.Name;
@@ -48,7 +54,7 @@ import static org.apache.cassandra.sidecar.utils.HttpExceptions.wrapHttpExceptio
  * {@code org.apache.cassandra.sidecar.adapters.base.TokenRangeReplicaProvider.StateWithReplacement}
  */
 @Singleton
-public class TokenRangeReplicaMapHandler extends AbstractHandler<Name>
+public class TokenRangeReplicaMapHandler extends AbstractHandler<Name> implements AccessProtected
 {
 
     @Inject
@@ -57,6 +63,13 @@ public class TokenRangeReplicaMapHandler extends AbstractHandler<Name>
                                        ExecutorPools executorPools)
     {
         super(metadataFetcher, executorPools, validator);
+    }
+
+    @Override
+    public Set<Authorization> requiredAuthorizations()
+    {
+        String resource = VariableAwareResource.DATA_WITH_KEYSPACE.resource();
+        return ImmutableSet.of(SidecarActions.VIEW_TOPOLOGY.toAuthorization(resource));
     }
 
     /**

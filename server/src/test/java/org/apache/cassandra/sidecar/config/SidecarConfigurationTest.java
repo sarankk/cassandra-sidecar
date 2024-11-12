@@ -330,9 +330,22 @@ class SidecarConfigurationTest
         .contains(entry("certificate_validator", "io.vertx.ext.auth.mtls.impl.AllowAllCertificateValidator"),
                   entry("certificate_identity_extractor", "org.apache.cassandra.sidecar.acl.authentication.CassandraIdentityExtractor"));
 
+        ParameterizedClassConfiguration authorizer = accessControlConfiguration.authorizerConfiguration();
+        assertThat(authorizer.className()).isEqualTo("org.apache.cassandra.sidecar.acl.authorization.RoleBasedAuthorizationProvider");
+
         assertThat(accessControlConfiguration.adminIdentities().size()).isEqualTo(2);
         assertThat(accessControlConfiguration.adminIdentities()).contains("spiffe://authorized/admin/identity1");
         assertThat(accessControlConfiguration.adminIdentities()).contains("spiffe://authorized/admin/identity2");
+
+        List<RolePermissionsConfiguration> rolePermissionsConfiguration = accessControlConfiguration.rolePermissionsConfigurations();
+        assertThat(rolePermissionsConfiguration.size()).isOne();
+        assertThat(rolePermissionsConfiguration.get(0).role()).isEqualTo("test_role");
+        List<ResourceActionsConfiguration> permissionsConfiguration = rolePermissionsConfiguration.get(0).permissionConfigurations();
+        assertThat(permissionsConfiguration.size()).isEqualTo(2);
+        assertThat(permissionsConfiguration.get(0).resource()).isEqualTo("data/sample_keyspace");
+        assertThat(permissionsConfiguration.get(0).actions().size()).isEqualTo(2);
+        assertThat(permissionsConfiguration.get(1).resource()).isEqualTo("data/sample_keyspace/sample_table");
+        assertThat(permissionsConfiguration.get(1).actions().size()).isEqualTo(2);
 
         assertThat(accessControlConfiguration.permissionCacheConfiguration()).isNotNull();
         CacheConfiguration permissionCacheConfiguration = accessControlConfiguration.permissionCacheConfiguration();

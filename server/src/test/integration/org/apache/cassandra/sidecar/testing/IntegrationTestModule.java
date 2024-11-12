@@ -19,6 +19,8 @@
 package org.apache.cassandra.sidecar.testing;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -29,12 +31,15 @@ import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
 import com.google.inject.Singleton;
 import io.vertx.core.Vertx;
+import org.apache.cassandra.sidecar.acl.authorization.RoleBasedAuthorizationProvider;
 import org.apache.cassandra.sidecar.cluster.InstancesConfig;
 import org.apache.cassandra.sidecar.cluster.instance.InstanceMetadata;
 import org.apache.cassandra.sidecar.common.server.CQLSessionProvider;
 import org.apache.cassandra.sidecar.config.AccessControlConfiguration;
 import org.apache.cassandra.sidecar.config.HealthCheckConfiguration;
 import org.apache.cassandra.sidecar.config.ParameterizedClassConfiguration;
+import org.apache.cassandra.sidecar.config.ResourceActionsConfiguration;
+import org.apache.cassandra.sidecar.config.RolePermissionsConfiguration;
 import org.apache.cassandra.sidecar.config.ServiceConfiguration;
 import org.apache.cassandra.sidecar.config.SidecarConfiguration;
 import org.apache.cassandra.sidecar.config.SslConfiguration;
@@ -43,6 +48,8 @@ import org.apache.cassandra.sidecar.config.yaml.CacheConfigurationImpl;
 import org.apache.cassandra.sidecar.config.yaml.HealthCheckConfigurationImpl;
 import org.apache.cassandra.sidecar.config.yaml.KeyStoreConfigurationImpl;
 import org.apache.cassandra.sidecar.config.yaml.ParameterizedClassConfigurationImpl;
+import org.apache.cassandra.sidecar.config.yaml.ResourceActionsConfigurationImpl;
+import org.apache.cassandra.sidecar.config.yaml.RolePermissionsConfigurationImpl;
 import org.apache.cassandra.sidecar.config.yaml.SchemaKeyspaceConfigurationImpl;
 import org.apache.cassandra.sidecar.config.yaml.SidecarConfigurationImpl;
 import org.apache.cassandra.sidecar.config.yaml.SslConfigurationImpl;
@@ -156,10 +163,20 @@ public class IntegrationTestModule extends AbstractModule
         ParameterizedClassConfiguration mTLSConfig
         = new ParameterizedClassConfigurationImpl("org.apache.cassandra.sidecar.acl.authentication.MutualTlsAuthenticationHandlerFactory",
                                                   params);
+        ParameterizedClassConfiguration rbacConfig
+        = new ParameterizedClassConfigurationImpl("org.apache.cassandra.sidecar.acl.authorization.RoleBasedAuthorizationProvider",
+                                                  Collections.emptyMap());
+        List<RolePermissionsConfiguration> rolePermissionsConfigurations = new ArrayList<>();
+        List<ResourceActionsConfiguration> resourceActionsConfigurations = new ArrayList<>();
+        resourceActionsConfigurations.add(new ResourceActionsConfigurationImpl(null, Collections.singletonList("VIEW:*")));
+        resourceActionsConfigurations.add(new ResourceActionsConfigurationImpl("data/test_keyspace", Collections.singletonList("*:*")));
+        rolePermissionsConfigurations.add(new RolePermissionsConfigurationImpl("test_role", resourceActionsConfigurations));
         return new AccessControlConfigurationImpl(true,
                                                   Collections.singletonList(mTLSConfig),
+                                                  rbacConfig,
                                                   Collections.singleton(ADMIN_IDENTITY),
-                                                  new CacheConfigurationImpl());
+                                                  rolePermissionsConfigurations,
+                                                  new CacheConfigurationImpl(1000, 100, true, 5, 1000));
     }
 
     class WrapperInstancesConfig implements InstancesConfig

@@ -18,12 +18,17 @@
 
 package org.apache.cassandra.sidecar.routes;
 
+import java.util.Set;
+
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableSet;
 
 import com.google.inject.Inject;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.net.SocketAddress;
+import io.vertx.ext.auth.authorization.Authorization;
 import io.vertx.ext.web.RoutingContext;
+import org.apache.cassandra.sidecar.acl.authorization.SidecarActions;
 import org.apache.cassandra.sidecar.cluster.CassandraAdapterDelegate;
 import org.apache.cassandra.sidecar.common.server.ClusterMembershipOperations;
 import org.apache.cassandra.sidecar.common.server.utils.GossipInfoParser;
@@ -34,7 +39,7 @@ import org.apache.cassandra.sidecar.utils.InstanceMetadataFetcher;
 /**
  * Handler for retrieving gossip info
  */
-public class GossipInfoHandler extends AbstractHandler<Void>
+public class GossipInfoHandler extends AbstractHandler<Void> implements AccessProtected
 {
     /**
      * Constructs a handler with the provided {@code metadataFetcher}
@@ -46,6 +51,12 @@ public class GossipInfoHandler extends AbstractHandler<Void>
     protected GossipInfoHandler(InstanceMetadataFetcher metadataFetcher, ExecutorPools executorPools)
     {
         super(metadataFetcher, executorPools, null);
+    }
+
+    @Override
+    public Set<Authorization> requiredAuthorizations()
+    {
+        return ImmutableSet.of(SidecarActions.VIEW_CLUSTER.toAuthorization());
     }
 
     /**

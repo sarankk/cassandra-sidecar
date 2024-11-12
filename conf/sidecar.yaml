@@ -158,9 +158,36 @@ access_control:
         #
         # other options are, io.vertx.ext.auth.mtls.impl.SpiffeIdentityExtractor.
         certificate_identity_extractor: org.apache.cassandra.sidecar.acl.authentication.CassandraIdentityExtractor
+  authorizer:
+    # AuthorizationProvider provides authorizations an authenticated user holds.
+    #
+    # org.apache.cassandra.sidecar.acl.authorization.AllowAllAuthorizationProvider marks all requests as authorized.
+    # Other options are org.apache.cassandra.sidecar.acl.authorization.RoleBaseAuthorizationProvider, it validates
+    # role associated with authenticated user has permission for resource it accesses.
+    - class_name: org.apache.cassandra.sidecar.acl.authorization.AllowAllAuthorizationProvider
   # Identities that are authenticated and authorized.
   admin_identities:
 #    - spiffe://authorized/admin/identities
+  # role_permissions list stores sidecar related permissions users hold. When this list is empty, only permissions
+  # stored in system_auth.role_permissions table in Cassandra will be honored. Permissions are stored against resources
+  # the user is granted access for.
+  role_permissions:
+      # Role name associated with the user in Cassandra database.
+    - role: trusted_role
+      permissions:
+          # Resource is defined by its type (e.g. data) and specific parts (e.g. keyspace, table). Allowed
+          # actions on the resource are listed below. If resource is not set, actions are allowed across resources.
+        - resource: data/sample_keyspace/sample_table
+          actions:
+              # Majority of actions in sidecar are specified in format: <action_allowed>:<action_target>. In below
+              # example, CREATE action is allowed for SNAPSHOT target. Other possible actions are VIEW, UPDATE, DELETE,
+              # STREAM, IMPORT, UPLOAD, START, ABORT etc.
+              #
+              # Wildcard actions are supported. *:SNAPSHOT allows CREATE, VIEW and DELETE actions on SNAPSHOT. To allow
+              # CREATE action on all possible targets, use CREATE:*. To allow all possible permissions for a resource
+              # use *:*
+            - 'CREATE:SNAPSHOT'
+            - '*:SSTABLE'
   permission_cache:
     enabled: true
     expire_after_access_millis: 300000

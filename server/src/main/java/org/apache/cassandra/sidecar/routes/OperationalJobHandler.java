@@ -18,13 +18,18 @@
 
 package org.apache.cassandra.sidecar.routes;
 
+import java.util.Set;
 import java.util.UUID;
 import javax.inject.Inject;
+
+import com.google.common.collect.ImmutableSet;
 
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.net.SocketAddress;
+import io.vertx.ext.auth.authorization.Authorization;
 import io.vertx.ext.web.RoutingContext;
+import org.apache.cassandra.sidecar.acl.authorization.SidecarActions;
 import org.apache.cassandra.sidecar.common.data.OperationalJobStatus;
 import org.apache.cassandra.sidecar.common.response.OperationalJobResponse;
 import org.apache.cassandra.sidecar.concurrent.ExecutorPools;
@@ -40,7 +45,7 @@ import static org.apache.cassandra.sidecar.utils.HttpExceptions.wrapHttpExceptio
 /**
  * Handler for retrieving the status of async operational jobs running on the sidecar
  */
-public class OperationalJobHandler extends AbstractHandler<Void>
+public class OperationalJobHandler extends AbstractHandler<Void> implements AccessProtected
 {
     private final OperationalJobManager jobManager;
 
@@ -52,6 +57,12 @@ public class OperationalJobHandler extends AbstractHandler<Void>
     {
         super(metadataFetcher, executorPools, validator);
         this.jobManager = jobManager;
+    }
+
+    @Override
+    public Set<Authorization> requiredAuthorizations()
+    {
+        return ImmutableSet.of(SidecarActions.VIEW_TASKS.toAuthorization());
     }
 
     @Override
