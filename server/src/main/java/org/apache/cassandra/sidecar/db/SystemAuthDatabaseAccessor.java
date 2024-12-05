@@ -20,7 +20,6 @@ package org.apache.cassandra.sidecar.db;
 
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -33,10 +32,8 @@ import com.datastax.driver.core.Row;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import org.apache.cassandra.sidecar.acl.authorization.CassandraPermission;
-import org.apache.cassandra.sidecar.acl.authorization.Resource;
 import org.apache.cassandra.sidecar.common.server.CQLSessionProvider;
 import org.apache.cassandra.sidecar.db.schema.SystemAuthSchema;
-import org.apache.cassandra.sidecar.exceptions.SchemaUnavailableException;
 
 /**
  * Database Accessor that queries cassandra to get information maintained under system_auth keyspace.
@@ -59,9 +56,7 @@ public class SystemAuthDatabaseAccessor extends DatabaseAccessor<SystemAuthSchem
      */
     public String findRoleFromIdentity(String identity)
     {
-        ensureIdentityToRoleTableAccess();
-        BoundStatement statement = tableSchema.selectRoleFromIdentity()
-                                              .bind(identity);
+        BoundStatement statement = tableSchema.selectRoleFromIdentity().bind(identity);
         ResultSet result = execute(statement);
         Row row = result.one();
         return row != null ? row.getString("role") : null;
@@ -74,9 +69,7 @@ public class SystemAuthDatabaseAccessor extends DatabaseAccessor<SystemAuthSchem
      */
     public Map<String, String> findAllIdentityToRoles()
     {
-        ensureIdentityToRoleTableAccess();
         BoundStatement statement = tableSchema.getAllRolesAndIdentities().bind();
-
         ResultSet resultSet = execute(statement);
         Map<String, String> results = new HashMap<>();
         for (Row row : resultSet)
