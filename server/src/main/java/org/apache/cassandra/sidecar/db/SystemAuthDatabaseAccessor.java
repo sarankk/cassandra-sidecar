@@ -18,14 +18,22 @@
 
 package org.apache.cassandra.sidecar.db;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import org.apache.commons.lang3.tuple.Pair;
 
 import com.datastax.driver.core.BoundStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import org.apache.cassandra.sidecar.acl.authorization.CassandraPermission;
+import org.apache.cassandra.sidecar.acl.authorization.Resource;
 import org.apache.cassandra.sidecar.common.server.CQLSessionProvider;
 import org.apache.cassandra.sidecar.db.schema.SystemAuthSchema;
 import org.apache.cassandra.sidecar.exceptions.SchemaUnavailableException;
@@ -76,6 +84,44 @@ public class SystemAuthDatabaseAccessor extends DatabaseAccessor<SystemAuthSchem
             results.put(row.getString("identity"), row.getString("role"));
         }
         return results;
+    }
+
+    public Set<CassandraPermission> listPermissionsOfRoleOnResource(Pair<String, String> roleResource)
+    {
+        BoundStatement statement = tableSchema.listPermissionsOfRoleOnResource()
+                                              .bind(roleResource.getLeft());
+        ResultSet result = execute(statement);
+        for (Row row : result.all())
+        {
+
+        }
+        return Collections.emptySet();
+    }
+
+    public Map<Pair<String, String>, Set<CassandraPermission>> getAllRolesAndPermissions()
+    {
+        BoundStatement statement = tableSchema.getAllRolesAndPermissions().bind();
+        ResultSet result = execute(statement);
+        Map<Pair<String, String>, Set<CassandraPermission>> rolePermissions = new HashMap<>();
+        for (Row row : result)
+        {
+            String role = row.getString("role");
+            String resource = row.getString("resource");
+            Set<CassandraPermission> permissions = row.getSet("permissions", String.class)
+                                                      .stream()
+                                                      .map(CassandraPermission::new)
+                                                      .collect(Collectors.toSet());
+            Pair<String, String> key = Pair.of(role, resource);
+            if (rolePermissions.containsKey(key))
+            {
+                rolePermissions.get(key).addAll(permissions);
+            }
+            else
+            {
+                rolePermissions.put(key, permissions);
+            }
+        }
+        return rolePermissions;
     }
 
     private void ensureIdentityToRoleTableAccess()

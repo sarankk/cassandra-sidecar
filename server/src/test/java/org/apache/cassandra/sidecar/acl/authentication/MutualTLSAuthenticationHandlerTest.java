@@ -55,6 +55,7 @@ import io.vertx.ext.web.client.WebClientOptions;
 import io.vertx.junit5.VertxExtension;
 import io.vertx.junit5.VertxTestContext;
 import org.apache.cassandra.sidecar.TestModule;
+import org.apache.cassandra.sidecar.acl.authorization.AllowAllAuthorizationProvider;
 import org.apache.cassandra.sidecar.config.AccessControlConfiguration;
 import org.apache.cassandra.sidecar.config.ParameterizedClassConfiguration;
 import org.apache.cassandra.sidecar.config.SslConfiguration;
@@ -308,7 +309,13 @@ class MutualTLSAuthenticationHandlerTest
 
 
             AccessControlConfiguration accessControlConfiguration
-            = new AccessControlConfigurationImpl(true, authenticatorsConfiguration(), Collections.singleton(ADMIN_IDENTITY), new CacheConfigurationImpl());
+            = new AccessControlConfigurationImpl(true,
+                                                 authenticatorsConfiguration(),
+                                                 new ParameterizedClassConfigurationImpl("org.apache.cassandra.sidecar.acl.authorization.AllowAllAuthorizationProvider",
+                                                                                         Collections.emptyMap()),
+                                                 Collections.singleton(ADMIN_IDENTITY),
+                                                 Collections.emptyList(),
+                                                 new CacheConfigurationImpl());
 
             return super.abstractConfig(sslConfiguration, accessControlConfiguration);
         }

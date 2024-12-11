@@ -17,6 +17,9 @@
  */
 package org.apache.cassandra.sidecar.routes;
 
+import java.util.Collections;
+import java.util.Set;
+
 import com.datastax.driver.core.KeyspaceMetadata;
 import com.datastax.driver.core.Metadata;
 import com.google.inject.Inject;
@@ -26,6 +29,8 @@ import io.vertx.core.Future;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.net.SocketAddress;
 import io.vertx.ext.web.RoutingContext;
+import org.apache.cassandra.sidecar.acl.authorization.CassandraPermission;
+import org.apache.cassandra.sidecar.acl.authorization.Permission;
 import org.apache.cassandra.sidecar.cluster.CassandraAdapterDelegate;
 import org.apache.cassandra.sidecar.common.response.SchemaResponse;
 import org.apache.cassandra.sidecar.common.server.data.Name;
@@ -41,7 +46,7 @@ import static org.apache.cassandra.sidecar.utils.HttpExceptions.wrapHttpExceptio
  * The {@link SchemaHandler} class handles schema requests
  */
 @Singleton
-public class SchemaHandler extends AbstractHandler<Name>
+public class SchemaHandler extends AbstractHandler<Name> implements AccessProtected
 {
     /**
      * Constructs a handler with the provided {@code metadataFetcher}
@@ -70,6 +75,12 @@ public class SchemaHandler extends AbstractHandler<Name>
         metadata(host)
         .onFailure(cause -> processFailure(cause, context, host, remoteAddress, keyspace))
         .onSuccess(metadata -> handleWithMetadata(context, keyspace, metadata));
+    }
+
+    @Override
+    public Set<Permission> withPermissions()
+    {
+        return Collections.singleton(CassandraPermission.SELECT);
     }
 
     /**

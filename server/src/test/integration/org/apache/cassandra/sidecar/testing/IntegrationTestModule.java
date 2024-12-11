@@ -29,6 +29,8 @@ import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
 import com.google.inject.Singleton;
 import io.vertx.core.Vertx;
+import org.apache.cassandra.sidecar.acl.authorization.AllowAllAuthorizationProvider;
+import org.apache.cassandra.sidecar.acl.authorization.RoleBaseAuthorizationProvider;
 import org.apache.cassandra.sidecar.cluster.InstancesConfig;
 import org.apache.cassandra.sidecar.cluster.instance.InstanceMetadata;
 import org.apache.cassandra.sidecar.common.server.CQLSessionProvider;
@@ -158,7 +160,9 @@ public class IntegrationTestModule extends AbstractModule
                                                   params);
         return new AccessControlConfigurationImpl(true,
                                                   Collections.singletonList(mTLSConfig),
+                                                  new ParameterizedClassConfigurationImpl(RoleBaseAuthorizationProvider.class.getName(), Collections.emptyMap()),
                                                   Collections.singleton(ADMIN_IDENTITY),
+                                                  Collections.emptyList(),
                                                   new CacheConfigurationImpl());
     }
 

@@ -34,6 +34,8 @@ public class SystemAuthSchema extends CassandraSystemTableSchema
     private static final String IDENTITY_TO_ROLE_TABLE = "identity_to_role";
     private PreparedStatement selectRoleFromIdentity;
     private PreparedStatement getAllRolesAndIdentities;
+    private PreparedStatement listPermissionsOfRoleOnResource;
+    private PreparedStatement getAllRolesAndPermissions;
 
     @Override
     protected String keyspaceName()
@@ -44,6 +46,8 @@ public class SystemAuthSchema extends CassandraSystemTableSchema
     @Override
     protected void prepareStatements(@NotNull Session session)
     {
+
+
         KeyspaceMetadata keyspaceMetadata = session.getCluster().getMetadata().getKeyspace(keyspaceName());
         // identity_to_role table exists in Cassandra versions starting 5.x
         if (keyspaceMetadata == null || keyspaceMetadata.getTable(IDENTITY_TO_ROLE_TABLE) == null)
@@ -57,6 +61,12 @@ public class SystemAuthSchema extends CassandraSystemTableSchema
         getAllRolesAndIdentities = prepare(getAllRolesAndIdentities,
                                            session,
                                            CqlLiterals.getAllRolesAndIdentities());
+        listPermissionsOfRoleOnResource = prepare(listPermissionsOfRoleOnResource,
+                                                  session,
+                                                  CqlLiterals.listPermissionsOfRoleOnResource());
+        getAllRolesAndPermissions = prepare(getAllRolesAndPermissions,
+                                            session,
+                                            CqlLiterals.getAllRolesAndPermissions());
     }
 
     @Override
@@ -78,6 +88,16 @@ public class SystemAuthSchema extends CassandraSystemTableSchema
         return getAllRolesAndIdentities;
     }
 
+    public PreparedStatement listPermissionsOfRoleOnResource()
+    {
+        return listPermissionsOfRoleOnResource;
+    }
+
+    public PreparedStatement getAllRolesAndPermissions()
+    {
+        return getAllRolesAndPermissions;
+    }
+
     private static class CqlLiterals
     {
         static String selectRoleFromIdentity()
@@ -88,6 +108,16 @@ public class SystemAuthSchema extends CassandraSystemTableSchema
         static String getAllRolesAndIdentities()
         {
             return "SELECT * FROM system_auth.identity_to_role;";
+        }
+
+        static String listPermissionsOfRoleOnResource()
+        {
+            return "SELECT * FROM system_auth.role_permissions WHERE role = ?";
+        }
+
+        static String getAllRolesAndPermissions()
+        {
+            return "SELECT * FROM system_auth.role_permissions";
         }
     }
 }

@@ -21,8 +21,10 @@ package org.apache.cassandra.sidecar.server;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.google.common.util.concurrent.SidecarRateLimiter;
@@ -36,22 +38,37 @@ import com.google.inject.Provides;
 import com.google.inject.Singleton;
 import com.google.inject.name.Named;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
 import io.vertx.core.file.FileSystemOptions;
+import io.vertx.core.http.HttpMethod;
+import io.vertx.ext.auth.authorization.AndAuthorization;
+import io.vertx.ext.auth.authorization.AuthorizationProvider;
+import io.vertx.ext.auth.authorization.PermissionBasedAuthorization;
+import io.vertx.ext.auth.authorization.impl.PermissionBasedAuthorizationImpl;
 import io.vertx.ext.dropwizard.DropwizardMetricsOptions;
 import io.vertx.ext.dropwizard.Match;
 import io.vertx.ext.dropwizard.MatchType;
+import io.vertx.ext.web.Route;
 import io.vertx.ext.web.Router;
+import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.ChainAuthHandler;
 import io.vertx.ext.web.handler.ErrorHandler;
 import io.vertx.ext.web.handler.LoggerHandler;
 import io.vertx.ext.web.handler.StaticHandler;
 import io.vertx.ext.web.handler.TimeoutHandler;
+import org.apache.cassandra.sidecar.acl.IdentityToRoleCache;
 import org.apache.cassandra.sidecar.acl.authentication.AuthenticationHandlerFactory;
 import org.apache.cassandra.sidecar.acl.authentication.AuthenticationHandlerFactoryRegistry;
 import org.apache.cassandra.sidecar.acl.authentication.MutualTlsAuthenticationHandlerFactory;
+import org.apache.cassandra.sidecar.acl.authorization.AllowAllAuthorizationProvider;
+import org.apache.cassandra.sidecar.acl.authorization.SidecarAuthorizationHandler;
+import org.apache.cassandra.sidecar.acl.authorization.Permission;
+import org.apache.cassandra.sidecar.acl.authorization.RoleBaseAuthorizationProvider;
+import org.apache.cassandra.sidecar.acl.authorization.RolePermissionsCache;
+import org.apache.cassandra.sidecar.acl.authorization.SidecarPermissionsProvider;
 import org.apache.cassandra.sidecar.adapters.base.CassandraFactory;
 import org.apache.cassandra.sidecar.adapters.cassandra41.Cassandra41Factory;
 import org.apache.cassandra.sidecar.cluster.CQLSessionProviderImpl;
@@ -93,6 +110,7 @@ import org.apache.cassandra.sidecar.metrics.SchemaMetrics;
 import org.apache.cassandra.sidecar.metrics.SidecarMetrics;
 import org.apache.cassandra.sidecar.metrics.SidecarMetricsImpl;
 import org.apache.cassandra.sidecar.metrics.instance.InstanceHealthMetrics;
+import org.apache.cassandra.sidecar.routes.AccessProtected;
 import org.apache.cassandra.sidecar.routes.CassandraHealthHandler;
 import org.apache.cassandra.sidecar.routes.ConnectedClientStatsHandler;
 import org.apache.cassandra.sidecar.routes.DiskSpaceProtectionHandler;
@@ -237,9 +255,40 @@ public class MainModule extends AbstractModule
 
     @Provides
     @Singleton
+    public AuthorizationProvider authorizationProvider(SidecarConfiguration sidecarConfiguration,
+                                                       IdentityToRoleCache identityToRoleCache,
+                                                       RolePermissionsCache rolePermissionsCache,
+                                                       SidecarPermissionsProvider sidecarPermissionsProvider)
+    {
+        AccessControlConfiguration accessControlConfiguration = sidecarConfiguration.accessControlConfiguration();
+        if (!accessControlConfiguration.enabled())
+        {
+            return AllowAllAuthorizationProvider.INSTANCE;
+        }
+
+        ParameterizedClassConfiguration config = accessControlConfiguration.authorizerConfiguration();
+        if (config == null)
+        {
+            throw new ConfigurationException("Access control is enabled, but authorizer not set");
+        }
+
+        if (config.className().equalsIgnoreCase(AllowAllAuthorizationProvider.class.getName()))
+        {
+            return AllowAllAuthorizationProvider.INSTANCE;
+        }
+        if (config.className().equalsIgnoreCase(RoleBaseAuthorizationProvider.class.getName()))
+        {
+            return new RoleBaseAuthorizationProvider(identityToRoleCache, rolePermissionsCache, sidecarPermissionsProvider);
+        }
+        throw new ConfigurationException("Unrecognized authorizer class_name " + config.className() + " set");
+    }
+
+    @Provides
+    @Singleton
     public Router vertxRouter(Vertx vertx,
                               SidecarConfiguration sidecarConfiguration,
                               ChainAuthHandler chainAuthHandler,
+                              AuthorizationProvider authorizationProvider,
                               ServiceConfiguration conf,
                               CassandraHealthHandler cassandraHealthHandler,
                               StreamSSTableComponentHandler streamSSTableComponentHandler,
@@ -316,9 +365,17 @@ public class MainModule extends AbstractModule
               .handler(streamSSTableComponentHandler)
               .handler(fileStreamHandler);
 
-        router.get(ApiEndpointsV1.COMPONENTS_ROUTE)
-              .handler(streamSSTableComponentHandler)
-              .handler(fileStreamHandler);
+//        router.get(ApiEndpointsV1.COMPONENTS_ROUTE)
+//              .handler(streamSSTableComponentHandler)
+//              .handler(fileStreamHandler);
+        buildAuthorizedRoute(router,
+                             HttpMethod.GET,
+                             ApiEndpointsV1.COMPONENTS_ROUTE,
+                             sidecarConfiguration.accessControlConfiguration(),
+                             authorizationProvider,
+                             "data/{keyspace}/{table}",
+                             streamSSTableComponentHandler,
+                             fileStreamHandler);
 
         // Support for routes that want to stream SStable index components
         router.get(ApiEndpointsV1.COMPONENTS_WITH_SECONDARY_INDEX_ROUTE_SUPPORT)
@@ -353,8 +410,16 @@ public class MainModule extends AbstractModule
         router.get(ApiEndpointsV1.DEPRECATED_KEYSPACE_SCHEMA_ROUTE)
               .handler(schemaHandler);
 
-        router.get(ApiEndpointsV1.KEYSPACE_SCHEMA_ROUTE)
-              .handler(schemaHandler);
+//        router.get(ApiEndpointsV1.KEYSPACE_SCHEMA_ROUTE)
+//              .handler(schemaHandler);
+
+        buildAuthorizedRoute(router,
+                             HttpMethod.GET,
+                             ApiEndpointsV1.KEYSPACE_SCHEMA_ROUTE,
+                             sidecarConfiguration.accessControlConfiguration(),
+                             authorizationProvider,
+                             "data/{keyspace}",
+                             schemaHandler);
 
         router.get(ApiEndpointsV1.RING_ROUTE)
               .handler(ringHandler);
@@ -714,5 +779,64 @@ public class MainModule extends AbstractModule
                                    .delegate(delegate)
                                    .metricRegistry(instanceSpecificRegistry)
                                    .build();
+    }
+
+    private void buildAuthorizedRoute(Router router,
+                                      HttpMethod httpMethod,
+                                      String path,
+                                      AccessControlConfiguration accessControlConfiguration,
+                                      AuthorizationProvider authorizationProvider,
+                                      String variableAwareResource,
+                                      Handler<RoutingContext>... handlers)
+
+    {
+        Set<Permission> requiredPermissions = new HashSet<>();
+        for (Handler<RoutingContext> handler : handlers)
+        {
+            if (!(handler instanceof AccessProtected))
+            {
+                throw new IllegalStateException("To enforce permissions, handlers provided for building authorized route " +
+                                                "must implement the AccessProtected interface.");
+            }
+
+            AccessProtected accessProtectedHandler =  (AccessProtected) handler;
+            requiredPermissions.addAll(accessProtectedHandler.withPermissions());
+        }
+
+        Route handler = router.route(httpMethod, path);
+
+        if (accessControlConfiguration.enabled())
+        {
+            handler.handler(authorizationHandler(accessControlConfiguration.adminIdentities(),
+                                                 authorizationProvider,
+                                                 requiredPermissions,
+                                                 variableAwareResource));
+        }
+        for (Handler<RoutingContext> routingContextHandler : handlers)
+        {
+            handler.handler(routingContextHandler);
+        }
+    }
+
+    private SidecarAuthorizationHandler authorizationHandler(Set<String> adminIdentities,
+                                                             AuthorizationProvider authorizationProvider,
+                                                             Set<Permission> requiredPermissions,
+                                                             String variableAwareResource)
+    {
+        AndAuthorization authorization = AndAuthorization.create();
+        for(Permission permission : requiredPermissions)
+        {
+            PermissionBasedAuthorization current = new PermissionBasedAuthorizationImpl(permission.toString());
+            current.setResource(variableAwareResource);
+            authorization.addAuthorization(current);
+        }
+        SidecarAuthorizationHandler authorizationHandler = new SidecarAuthorizationHandler(adminIdentities,
+                                                                                           authorization);
+        authorizationHandler.addAuthorizationProvider(authorizationProvider);
+        authorizationHandler.variableConsumer((routingCtx, authZContext) -> {
+            authZContext.variables().add("keyspace", routingCtx.pathParam("keyspace"));
+//            authZContext.variables().add("table", routingCtx.pathParam("table"));
+        });
+        return authorizationHandler;
     }
 }

@@ -20,7 +20,11 @@ package org.apache.cassandra.sidecar.routes;
 
 
 import java.nio.file.NoSuchFileException;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import javax.management.InstanceNotFoundException;
 
 import com.google.inject.Inject;
@@ -30,6 +34,9 @@ import io.vertx.core.Future;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.net.SocketAddress;
 import io.vertx.ext.web.RoutingContext;
+import org.apache.cassandra.sidecar.acl.authorization.CassandraPermission;
+import org.apache.cassandra.sidecar.acl.authorization.Permission;
+import org.apache.cassandra.sidecar.acl.authorization.SidecarPermission;
 import org.apache.cassandra.sidecar.cluster.CassandraAdapterDelegate;
 import org.apache.cassandra.sidecar.common.server.StorageOperations;
 import org.apache.cassandra.sidecar.common.server.TableOperations;
@@ -50,7 +57,7 @@ import static org.apache.cassandra.sidecar.utils.HttpExceptions.wrapHttpExceptio
  * for the {@link FileStreamHandler} to stream the component back to the client
  */
 @Singleton
-public class StreamSSTableComponentHandler extends AbstractHandler<StreamSSTableComponentRequestParam>
+public class StreamSSTableComponentHandler extends AbstractHandler<StreamSSTableComponentRequestParam> implements AccessProtected
 {
     private final SnapshotPathBuilder snapshotPathBuilder;
 
@@ -76,6 +83,12 @@ public class StreamSSTableComponentHandler extends AbstractHandler<StreamSSTable
                          this.getClass().getSimpleName(), path, request, remoteAddress, host);
             context.put(FileStreamHandler.FILE_PATH_CONTEXT_KEY, path).next();
         }).onFailure(cause -> processFailure(cause, context, host, remoteAddress, request));
+    }
+
+    @Override
+    public Set<Permission> withPermissions()
+    {
+        return Collections.singleton(SidecarPermission.STREAM_SSTABLE);
     }
 
     private Future<String> resolveComponentPathFromRequest(String host, StreamSSTableComponentRequestParam request)

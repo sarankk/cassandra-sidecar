@@ -158,9 +158,30 @@ access_control:
         #
         # other options are, io.vertx.ext.auth.mtls.impl.SpiffeIdentityExtractor.
         certificate_identity_extractor: org.apache.cassandra.sidecar.acl.authentication.CassandraIdentityExtractor
+  authorizer:
+    # AuthorizationProvider provides authorizations an authenticated user holds.
+    #
+    # org.apache.cassandra.sidecar.acl.authorization.AllowAllAuthorizationProvider marks all requests as authorized.
+    # Other options are org.apache.cassandra.sidecar.acl.authorization.RoleBaseAuthorizationProvider, it validates
+    # role associated with authenticated user has permission for resource it accesses.
+    - class_name: org.apache.cassandra.sidecar.acl.authorization.AllowAllAuthorizationProvider
   # Identities that are authenticated and authorized.
   admin_identities:
 #    - spiffe://authorized/admin/identities
+  # user_permissions list stores custom sidecar related permissions users hold. When this list is empty, only permissions
+  # stored in Cassandra in system_auth.role_permissions table will be honored.
+  user_permissions:
+      # For users holding both cassandra and sidecar related permissions, recommend setting same role name associated
+      # with the user in Cassandra database.
+    - role: trusted_role
+      permissions:
+          # Resource starts with <resource_type>/...<resource_parts>. Currently sidecar recognizes only data resource type
+        - resource: data/sample_keyspace/sample_table
+          # Permission is represented through <action_allowed>_<action_target>. In below example, CREATE action
+          # is allowed for SNAPSHOT target. Other possible actions are CREATE, READ, EDIT, DELETE, STREAM, UPLOAD,
+          # EXECUTE, ALL. Action ALL allows all possible actions for a target, for e.g. ALL_SNAPSHOT allows both
+          # CREATE_SNAPSHOT, DELETE_SNAPSHOT
+          permission: STREAM_SSTABLE
   permission_cache:
     enabled: true
     expire_after_access_millis: 300000

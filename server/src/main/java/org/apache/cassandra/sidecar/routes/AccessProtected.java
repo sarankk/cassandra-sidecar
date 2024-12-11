@@ -16,30 +16,19 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.sidecar.accesscontrol.authorization;
+package org.apache.cassandra.sidecar.routes;
 
-import io.vertx.ext.auth.authorization.Authorization;
-import io.vertx.ext.auth.authorization.AuthorizationContext;
+import java.util.Set;
+
+import org.apache.cassandra.sidecar.acl.authorization.Permission;
 
 /**
- * {@code Authorization} implementation to allow access for all users regardless of their authorizations.
+ * Provides permissions that Handler requires for authorization.
  */
-public class AllowAllAuthorization implements Authorization
+public interface AccessProtected
 {
-    public static final AllowAllAuthorization INSTANCE = new AllowAllAuthorization();
-
-    @Override
-    public boolean match(AuthorizationContext context)
-    {
-        return true;
-    }
-
     /**
-     * Allows access regardless of permissions set.
+     * @return Set of permissions required, where all permissions must be granted.
      */
-    @Override
-    public boolean verify(Authorization authorization)
-    {
-        return true;
-    }
+    Set<Permission> withPermissions();
 }

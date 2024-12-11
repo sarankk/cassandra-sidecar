@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.sidecar.accesscontrol.authorization;
+package org.apache.cassandra.sidecar.acl.authorization;
 
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
@@ -29,6 +29,8 @@ import io.vertx.ext.auth.authorization.AuthorizationProvider;
  */
 public class AllowAllAuthorizationProvider implements AuthorizationProvider
 {
+    public static final AllowAllAuthorizationProvider INSTANCE = new AllowAllAuthorizationProvider();
+
     /**
      * @return unique id representing {@code AllowAllAuthorizationProvider}
      */

@@ -241,7 +241,7 @@ public abstract class IntegrationTestBase
         {
             try
             {
-                sidecarTestContext.refreshInstancesConfig();
+                sidecarTestContext.instancesConfig();
 
                 Session session = maybeGetSession();
 
