@@ -51,33 +51,13 @@ public class RoleBaseAuthorizationProvider implements AuthorizationProvider
         return "RBAC";
     }
 
+    @Override
     public void getAuthorizations(User user, Handler<AsyncResult<Void>> handler)
     {
-//        List<String> identities = Optional.ofNullable(user.principal().getString("identity"))
-//                                          .map(Collections::singletonList)
-//                                          .orElseGet(() -> Arrays.asList(user.principal()
-//                                                                             .getString("identities")
-//                                                                             .split(",")));
-//
-////        String cassandraRole = identityToRoleCache.get(identities.get(0));
-//        String cassandraRole = "cassandra";
-//
-//        rolePermissionsCache.getAll().forEach((key, permissions) -> {
-//            if (key.getLeft().equals(cassandraRole))
-//            {
-//                permissions.forEach(permission -> {
-//                    PermissionBasedAuthorization authorization = new PermissionBasedAuthorizationImpl(permission.toString());
-//                    authorization.setResource(key.getRight());
-//                    user.authorizations().add(getId(), authorization);
-//                });
-//            }
-//        });
-
-
-
         getAuthorizations(user).onComplete(handler);
     }
 
+    @Override
     public Future<Void> getAuthorizations(User user)
     {
 //        return AuthorizationProvider.super.getAuthorizations(user);

@@ -112,11 +112,11 @@ public abstract class AuthCache<K, V>
      */
     public Map<K, V> getAll()
     {
-        if (!config.enabled())
-        {
+//        if (!config.enabled())
+//        {
             return bulkLoadFunction.get();
-        }
-        return Collections.unmodifiableMap(cache.asMap());
+//        }
+//        return Collections.unmodifiableMap(cache.asMap());
     }
 
     private LoadingCache<K, V> initCache()
