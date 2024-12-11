@@ -21,29 +21,10 @@ package org.apache.cassandra.sidecar.acl.authorization;
 /**
  * Represents permissions held by users for authorization.
  */
-public class Permission
+public interface Permission
 {
-    protected final String target;
-    protected final String action;
-
-    public Permission(String action)
-    {
-        this(null, action);
-    }
-
-    public Permission(String target, String action)
-    {
-        this.target = target;
-        this.action = action;
-    }
-
-    public String target()
-    {
-        return target;
-    }
-
-    public String action()
-    {
-        return action;
-    }
+    /**
+     * @return name representing permission
+     */
+    String name();
 }

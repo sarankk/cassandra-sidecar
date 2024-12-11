@@ -122,10 +122,11 @@ public abstract class AuthCache<K, V>
 
     private LoadingCache<K, V> initCache()
     {
+        long refreshAfterWriteMillis = config.activeUpdate() ? config.expireAfterAccessMillis() : config.updateIntervalInMillis();
         return Caffeine.newBuilder()
                        // setting refreshAfterWrite and expireAfterWrite to same value makes sure no stale
                        // data is fetched after expire time
-                       .refreshAfterWrite(config.expireAfterAccessMillis(), TimeUnit.MILLISECONDS)
+                       .refreshAfterWrite(refreshAfterWriteMillis, TimeUnit.MILLISECONDS)
                        .expireAfterWrite(config.expireAfterAccessMillis(), TimeUnit.MILLISECONDS)
                        .maximumSize(config.maximumSize())
                        .build(loadFunction::apply);

@@ -21,23 +21,45 @@ package org.apache.cassandra.sidecar.acl.authorization;
 import org.apache.cassandra.sidecar.exceptions.ConfigurationException;
 import org.jetbrains.annotations.NotNull;
 
-public class SidecarPermission extends Permission
+/**
+ * Represents sidecar specific permissions.
+ */
+public class SidecarPermission implements Permission
 {
     public static final SidecarPermission CREATE_SNAPSHOT = new SidecarPermission("SNAPSHOT", "CREATE");
     public static final SidecarPermission READ_SNAPSHOT = new SidecarPermission("SNAPSHOT", "READ");
     public static final SidecarPermission DELETE_SNAPSHOT = new SidecarPermission("SNAPSHOT", "DELETE");
     public static final SidecarPermission UPLOAD_SSTABLE = new SidecarPermission("SSTABLE", "UPLOAD");
     public static final SidecarPermission STREAM_SSTABLE = new SidecarPermission("SSTABLE", "STREAM");
-    public static final SidecarPermission DELETE_SSTABLE = new SidecarPermission("SSTABLE", "STREAM");
-    public static final SidecarPermission READ_INFO = new SidecarPermission("INFO", "READ");
+
+    // TODO add applicable permission by target
+
+    private final String target;
+    private final String action;
+
+    public SidecarPermission(String action)
+    {
+        this(null, action);
+    }
 
     public SidecarPermission(String target, String action)
     {
-        super(target, action);
+        this.target = target;
+        this.action = action;
+    }
+
+    public String target()
+    {
+        return target;
+    }
+
+    public String action()
+    {
+        return action;
     }
 
     @Override
-    public String toString()
+    public String name()
     {
         return String.format("%s_%s", action, target);
     }

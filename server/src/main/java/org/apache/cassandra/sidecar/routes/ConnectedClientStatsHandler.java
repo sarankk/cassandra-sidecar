@@ -18,15 +18,10 @@
 
 package org.apache.cassandra.sidecar.routes;
 
-import java.util.Collections;
-import java.util.Set;
-
 import com.google.inject.Inject;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.net.SocketAddress;
 import io.vertx.ext.web.RoutingContext;
-import org.apache.cassandra.sidecar.acl.authorization.Permission;
-import org.apache.cassandra.sidecar.acl.authorization.SidecarPermission;
 import org.apache.cassandra.sidecar.concurrent.ExecutorPools;
 import org.apache.cassandra.sidecar.utils.InstanceMetadataFetcher;
 
@@ -35,7 +30,7 @@ import static org.apache.cassandra.sidecar.utils.RequestUtils.parseBooleanQueryP
 /**
  * Handler for retrieving stats for connected clients
  */
-public class ConnectedClientStatsHandler extends AbstractHandler<Void> implements AccessProtected
+public class ConnectedClientStatsHandler extends AbstractHandler<Void>
 {
     /**
      * Constructs a handler with the provided {@code metadataFetcher}
@@ -68,12 +63,6 @@ public class ConnectedClientStatsHandler extends AbstractHandler<Void> implement
                          .onSuccess(context::json)
                          .onFailure(cause -> processFailure(cause, context, host, remoteAddress, request));
         });
-    }
-
-    @Override
-    public Set<Permission> withPermissions()
-    {
-        return Collections.singleton(SidecarPermission.READ_INFO);
     }
 
     protected Void extractParamsOrThrow(RoutingContext context)

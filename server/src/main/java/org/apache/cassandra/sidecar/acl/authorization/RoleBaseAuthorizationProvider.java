@@ -21,22 +21,31 @@ package org.apache.cassandra.sidecar.acl.authorization;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+
+import org.apache.commons.lang3.tuple.Pair;
 
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.ext.auth.User;
-import io.vertx.ext.auth.authorization.Authorization;
 import io.vertx.ext.auth.authorization.AuthorizationProvider;
 import io.vertx.ext.auth.authorization.PermissionBasedAuthorization;
 import io.vertx.ext.auth.authorization.impl.PermissionBasedAuthorizationImpl;
 import org.apache.cassandra.sidecar.acl.IdentityToRoleCache;
 
+/**
+ * Provides authorizations based on user's role. Extracts permissions user holds from either Cassandra's
+ * system_auth.role_permissions table or from permissions configured in sidecar and retrieves sidecar permissions
+ * from SidecarPermissionsProvider.
+ */
 public class RoleBaseAuthorizationProvider implements AuthorizationProvider
 {
     private final IdentityToRoleCache identityToRoleCache;
     private final RolePermissionsCache rolePermissionsCache;
+    private final SidecarPermissionsProvider sidecarPermissionsProvider;
 
     public RoleBaseAuthorizationProvider(IdentityToRoleCache identityToRoleCache,
                                          RolePermissionsCache rolePermissionsCache,
@@ -44,11 +53,12 @@ public class RoleBaseAuthorizationProvider implements AuthorizationProvider
     {
         this.identityToRoleCache = identityToRoleCache;
         this.rolePermissionsCache = rolePermissionsCache;
+        this.sidecarPermissionsProvider = sidecarPermissionsProvider;
     }
 
     public String getId()
     {
-        return "RBAC";
+        return "RoleBasedAccessControl";
     }
 
     @Override
@@ -60,31 +70,43 @@ public class RoleBaseAuthorizationProvider implements AuthorizationProvider
     @Override
     public Future<Void> getAuthorizations(User user)
     {
-//        return AuthorizationProvider.super.getAuthorizations(user);
-
-
         List<String> identities = Optional.ofNullable(user.principal().getString("identity"))
                                           .map(Collections::singletonList)
                                           .orElseGet(() -> Arrays.asList(user.principal()
                                                                              .getString("identities")
                                                                              .split(",")));
 
-//        String cassandraRole = identityToRoleCache.get(identities.get(0));
-        String cassandraRole = "cassandra";
+        String expectedRole = identityToRoleCache.get(identities.get(0));
 
-        rolePermissionsCache.getAll().forEach((key, permissions) -> {
-            if (key.getLeft().equals(cassandraRole))
+        for (Map.Entry<Pair<String, String>, Set<CassandraPermission>> entry : rolePermissionsCache.getAll().entrySet())
+        {
+            String role = entry.getKey().getLeft();
+            String resource = entry.getKey().getRight();
+            if (!role.equals(expectedRole))
             {
-                permissions.forEach(permission -> {
-                    PermissionBasedAuthorization authorization = new PermissionBasedAuthorizationImpl(permission.toString());
-                    authorization.setResource(key.getRight());
-                    user.authorizations().add(getId(), authorization);
-                });
+                continue;
             }
-        });
+            entry.getValue().forEach(permission -> {
+                PermissionBasedAuthorization authorization = new PermissionBasedAuthorizationImpl(permission.name());
+                authorization.setResource(resource);
+                user.authorizations().add(getId(), authorization);
+            });
+        }
 
-        // for super users should grant AllowAllAuthorization
-
+        for (Map.Entry<Pair<String, Resource>, Set<SidecarPermission>> entry : sidecarPermissionsProvider.userPermissions().entrySet())
+        {
+            String role = entry.getKey().getLeft();
+            Resource resource = entry.getKey().getRight();
+            if (!role.equals(expectedRole))
+            {
+                continue;
+            }
+            entry.getValue().forEach(permission -> {
+                PermissionBasedAuthorization authorization = new PermissionBasedAuthorizationImpl(permission.name());
+                authorization.setResource(resource.getName());
+                user.authorizations().add(getId(), authorization);
+            });
+        }
         return Future.succeededFuture();
     }
 }

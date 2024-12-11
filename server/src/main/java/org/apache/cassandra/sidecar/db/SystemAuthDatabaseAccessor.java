@@ -20,6 +20,7 @@ package org.apache.cassandra.sidecar.db;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -81,12 +82,21 @@ public class SystemAuthDatabaseAccessor extends DatabaseAccessor<SystemAuthSchem
 
     public Set<CassandraPermission> listPermissionsOfRoleOnResource(Pair<String, String> roleResource)
     {
-        BoundStatement statement = tableSchema.listPermissionsOfRoleOnResource()
+        BoundStatement statement = tableSchema.listPermissionsOfRole()
                                               .bind(roleResource.getLeft());
         ResultSet result = execute(statement);
+        String expectedResource = roleResource.getRight();
         for (Row row : result.all())
         {
-
+            String resource = row.getString("resource");
+            if (!resource.equals(expectedResource))
+            {
+                continue;
+            }
+            return row.getSet("permissions", String.class)
+                      .stream()
+                      .map(CassandraPermission::new)
+                      .collect(Collectors.toSet());
         }
         return Collections.emptySet();
     }
@@ -105,23 +115,8 @@ public class SystemAuthDatabaseAccessor extends DatabaseAccessor<SystemAuthSchem
                                                       .map(CassandraPermission::new)
                                                       .collect(Collectors.toSet());
             Pair<String, String> key = Pair.of(role, resource);
-            if (rolePermissions.containsKey(key))
-            {
-                rolePermissions.get(key).addAll(permissions);
-            }
-            else
-            {
-                rolePermissions.put(key, permissions);
-            }
+            rolePermissions.computeIfAbsent(key, k -> new HashSet<>(permissions)).addAll(permissions);
         }
         return rolePermissions;
-    }
-
-    private void ensureIdentityToRoleTableAccess()
-    {
-        if (tableSchema.selectRoleFromIdentity() == null || tableSchema.getAllRolesAndIdentities() == null)
-        {
-            throw new SchemaUnavailableException("SystemAuthSchema was not prepared, values cannot be retrieved from table");
-        }
     }
 }

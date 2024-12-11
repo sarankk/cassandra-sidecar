@@ -18,7 +18,6 @@
 
 package org.apache.cassandra.sidecar.acl.authorization;
 
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -34,10 +33,13 @@ import org.apache.cassandra.sidecar.config.SidecarConfiguration;
 import org.apache.cassandra.sidecar.config.UserPermissionConfiguration;
 import org.apache.cassandra.sidecar.exceptions.ConfigurationException;
 
+/**
+ * Provider for sidecar related permissions.
+ */
 @Singleton
 public class SidecarPermissionsProvider
 {
-    Map<Pair<String, String>, Set<SidecarPermission>> userPermissions = new ConcurrentHashMap<>();
+    private final Map<Pair<String, Resource>, Set<SidecarPermission>> userPermissions = new ConcurrentHashMap<>();
 
     @Inject
     public SidecarPermissionsProvider(SidecarConfiguration sidecarConfiguration)
@@ -50,38 +52,37 @@ public class SidecarPermissionsProvider
         return userPermissions.get(Pair.of(role, resource));
     }
 
+    public Map<Pair<String, Resource>, Set<SidecarPermission>> userPermissions()
+    {
+        return userPermissions;
+    }
+
     private void parsePermissions(List<UserPermissionConfiguration> userPermissionConfigurations)
     {
         for (UserPermissionConfiguration userPermission : userPermissionConfigurations)
         {
             for (ResourcePermissionConfiguration resourcePermission : userPermission.permissionConfigurations())
             {
-                Pair<String, String> key = Pair.of(userPermission.role(), resourcePermission.resource());
+                Resource resource = parseResource(resourcePermission.resource());
+                Pair<String, Resource> key = Pair.of(userPermission.role(), resource);
                 SidecarPermission permission = parsePermission(resourcePermission.permission());
-                if (userPermissions.containsKey(key))
-                {
-                    userPermissions.get(key).add(permission);
-                }
-                else
-                {
-                    userPermissions.put(key, new HashSet<>(Collections.singleton(permission)));
-                }
+                userPermissions.computeIfAbsent(key, k -> new HashSet<>()).add(permission);
             }
         }
     }
 
-//    private Resource parseResource(String resource)
-//    {
-//        if (resource == null)
-//        {
-//            throw new ConfigurationException("Resource can not be null");
-//        }
-//        if (resource.startsWith("data"))
-//        {
-//            return DataResource.fromName(resource);
-//        }
-//        throw new ConfigurationException("Invalid resource set " + resource + " expected resource type is data");
-//    }
+    private Resource parseResource(String resource)
+    {
+        if (resource == null)
+        {
+            throw new ConfigurationException("Resource can not be null");
+        }
+        if (resource.startsWith(DataResource.root().getName()))
+        {
+            return DataResource.fromName(resource);
+        }
+        throw new ConfigurationException("Invalid resource set " + resource + " expected resource type is data");
+    }
 
     private SidecarPermission parsePermission(String permission)
     {

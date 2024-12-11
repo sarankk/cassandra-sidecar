@@ -34,7 +34,7 @@ public class SystemAuthSchema extends CassandraSystemTableSchema
     private static final String IDENTITY_TO_ROLE_TABLE = "identity_to_role";
     private PreparedStatement selectRoleFromIdentity;
     private PreparedStatement getAllRolesAndIdentities;
-    private PreparedStatement listPermissionsOfRoleOnResource;
+    private PreparedStatement listPermissionsOfRole;
     private PreparedStatement getAllRolesAndPermissions;
 
     @Override
@@ -46,9 +46,9 @@ public class SystemAuthSchema extends CassandraSystemTableSchema
     @Override
     protected void prepareStatements(@NotNull Session session)
     {
-        listPermissionsOfRoleOnResource = prepare(listPermissionsOfRoleOnResource,
+        listPermissionsOfRole = prepare(listPermissionsOfRole,
                                                   session,
-                                                  CqlLiterals.listPermissionsOfRoleOnResource());
+                                                  CqlLiterals.listPermissionsOfRole());
         getAllRolesAndPermissions = prepare(getAllRolesAndPermissions,
                                             session,
                                             CqlLiterals.getAllRolesAndPermissions());
@@ -73,6 +73,8 @@ public class SystemAuthSchema extends CassandraSystemTableSchema
     {
         selectRoleFromIdentity = null;
         getAllRolesAndIdentities = null;
+        getAllRolesAndPermissions = null;
+        listPermissionsOfRole = null;
     }
 
     @Override
@@ -85,20 +87,20 @@ public class SystemAuthSchema extends CassandraSystemTableSchema
     @NotNull
     public PreparedStatement selectRoleFromIdentity()
     {
-        ensureSchemaAvailable();
+//        ensureSchemaAvailable();
         return selectRoleFromIdentity;
     }
 
     @NotNull
     public PreparedStatement getAllRolesAndIdentities()
     {
-        ensureSchemaAvailable();
+//        ensureSchemaAvailable();
         return getAllRolesAndIdentities;
     }
 
-    public PreparedStatement listPermissionsOfRoleOnResource()
+    public PreparedStatement listPermissionsOfRole()
     {
-        return listPermissionsOfRoleOnResource;
+        return listPermissionsOfRole;
     }
 
     public PreparedStatement getAllRolesAndPermissions()
@@ -127,7 +129,7 @@ public class SystemAuthSchema extends CassandraSystemTableSchema
             return "SELECT * FROM system_auth.identity_to_role;";
         }
 
-        static String listPermissionsOfRoleOnResource()
+        static String listPermissionsOfRole()
         {
             return "SELECT * FROM system_auth.role_permissions WHERE role = ?";
         }

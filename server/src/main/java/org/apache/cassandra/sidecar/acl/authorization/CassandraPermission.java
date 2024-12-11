@@ -18,27 +18,32 @@
 
 package org.apache.cassandra.sidecar.acl.authorization;
 
-public class CassandraPermission extends Permission
+/**
+ * Represents permissions stored in Cassandra.
+ */
+public class CassandraPermission implements Permission
 {
     public static final CassandraPermission CREATE = new CassandraPermission("CREATE");
     public static final CassandraPermission ALTER = new CassandraPermission("ALTER");
     public static final CassandraPermission DROP = new CassandraPermission("DROP");
     public static final CassandraPermission SELECT = new CassandraPermission("SELECT");
     public static final CassandraPermission MODIFY = new CassandraPermission("MODIFY");
+    public static final CassandraPermission AUTHORIZE = new CassandraPermission("AUTHORIZE");
     public static final CassandraPermission DESCRIBE = new CassandraPermission("DESCRIBE");
+    public static final CassandraPermission EXECUTE = new CassandraPermission("EXECUTE");
     public static final CassandraPermission UNMASK = new CassandraPermission("UNMASK");
+    public static final CassandraPermission SELECT_MASKED = new CassandraPermission("SELECT_MASKED");
 
-    /**
-     * For Cassandra related permissions, target is not relevant.
-     */
-    public CassandraPermission(String action)
+    private String name;
+
+    public CassandraPermission(String name)
     {
-        super(action);
+        this.name = name;
     }
 
     @Override
-    public String toString()
+    public String name()
     {
-        return action;
+        return name;
     }
 }

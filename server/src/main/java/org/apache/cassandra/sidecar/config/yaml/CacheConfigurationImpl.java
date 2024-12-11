@@ -29,6 +29,12 @@ import org.jetbrains.annotations.VisibleForTesting;
  */
 public class CacheConfigurationImpl implements CacheConfiguration
 {
+    @JsonProperty("active_update")
+    protected final boolean activeUpdate;
+
+    @JsonProperty("update_interval_millis")
+    protected final long updateIntervalMillis;
+
     @JsonProperty("expire_after_access_millis")
     protected final long expireAfterAccessMillis;
 
@@ -46,22 +52,44 @@ public class CacheConfigurationImpl implements CacheConfiguration
 
     public CacheConfigurationImpl()
     {
-        this(TimeUnit.HOURS.toMillis(1), 100, true, 5, 1000);
+        this(true, TimeUnit.HOURS.toMillis(1), TimeUnit.HOURS.toMillis(1), 100, true, 5, 1000);
     }
 
     @VisibleForTesting
     public CacheConfigurationImpl(long expireAfterAccessMillis, long maximumSize)
     {
-        this(expireAfterAccessMillis, maximumSize, true, 5, 1000);
+        this(true, expireAfterAccessMillis, expireAfterAccessMillis, maximumSize, true, 5, 1000);
     }
 
-    public CacheConfigurationImpl(long expireAfterAccessMillis, long maximumSize, boolean enabled, int warmupRetries, long warmupRetryIntervalMillis)
+    public CacheConfigurationImpl(boolean activeUpdate,
+                                  long updateIntervalMillis,
+                                  long expireAfterAccessMillis,
+                                  long maximumSize,
+                                  boolean enabled,
+                                  int warmupRetries,
+                                  long warmupRetryIntervalMillis)
     {
+        this.activeUpdate = activeUpdate;
+        this.updateIntervalMillis = updateIntervalMillis;
         this.expireAfterAccessMillis = expireAfterAccessMillis;
         this.maximumSize = maximumSize;
         this.enabled = enabled;
         this.warmupRetries = warmupRetries;
         this.warmupRetryIntervalMillis = warmupRetryIntervalMillis;
+    }
+
+    @Override
+    @JsonProperty("active_update")
+    public boolean activeUpdate()
+    {
+        return false;
+    }
+
+    @Override
+    @JsonProperty("expire_after_access_millis")
+    public long updateIntervalInMillis()
+    {
+        return updateIntervalMillis;
     }
 
     @Override

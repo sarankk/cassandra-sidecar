@@ -125,8 +125,6 @@ class CqlSessionProviderIntegrationTest extends IntegrationTestBase
         waitForSchemaReady(30, TimeUnit.SECONDS);
         insertIdentityRole(ADMIN_IDENTITY, "cassandra");
         sidecarTestContext.setSslConfiguration(sslConfigWithKeystoreTruststore());
-
-//        waitForSchemaReady(30, TimeUnit.SECONDS);
         retrieveClientStats(context, "cassandra", true);
     }
 

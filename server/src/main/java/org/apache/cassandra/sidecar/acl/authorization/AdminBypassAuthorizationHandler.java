@@ -31,12 +31,15 @@ import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.HttpException;
 import io.vertx.ext.web.handler.impl.AuthorizationHandlerImpl;
 
-public class SidecarAuthorizationHandler extends AuthorizationHandlerImpl
+/**
+ * Allows admin identities to bypass authorization checks.
+ */
+public class AdminBypassAuthorizationHandler extends AuthorizationHandlerImpl
 {
     private final Set<String> adminIdentities;
 
-    public SidecarAuthorizationHandler(Set<String> adminIdentities,
-                                       Authorization authorization)
+    public AdminBypassAuthorizationHandler(Set<String> adminIdentities,
+                                           Authorization authorization)
     {
         super(authorization);
         this.adminIdentities = adminIdentities;
@@ -63,11 +66,11 @@ public class SidecarAuthorizationHandler extends AuthorizationHandlerImpl
                                                                              .split(",")));
 
         // Admin identities bypass route specific authorization checks
-//        if (identities.stream().anyMatch(adminIdentities::contains))
-//        {
-//            ctx.next();
-//            return;
-//        }
+        if (identities.stream().anyMatch(adminIdentities::contains))
+        {
+            ctx.next();
+            return;
+        }
 
         super.handle(ctx);
     }

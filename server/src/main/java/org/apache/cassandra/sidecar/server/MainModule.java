@@ -64,7 +64,7 @@ import org.apache.cassandra.sidecar.acl.authentication.AuthenticationHandlerFact
 import org.apache.cassandra.sidecar.acl.authentication.AuthenticationHandlerFactoryRegistry;
 import org.apache.cassandra.sidecar.acl.authentication.MutualTlsAuthenticationHandlerFactory;
 import org.apache.cassandra.sidecar.acl.authorization.AllowAllAuthorizationProvider;
-import org.apache.cassandra.sidecar.acl.authorization.SidecarAuthorizationHandler;
+import org.apache.cassandra.sidecar.acl.authorization.AdminBypassAuthorizationHandler;
 import org.apache.cassandra.sidecar.acl.authorization.Permission;
 import org.apache.cassandra.sidecar.acl.authorization.RoleBaseAuthorizationProvider;
 import org.apache.cassandra.sidecar.acl.authorization.RolePermissionsCache;
@@ -806,7 +806,6 @@ public class MainModule extends AbstractModule
         }
 
         Route handler = router.route(httpMethod, path);
-
         if (accessControlConfiguration.enabled())
         {
             handler.handler(authorizationHandler(accessControlConfiguration.adminIdentities(),
@@ -820,10 +819,10 @@ public class MainModule extends AbstractModule
         }
     }
 
-    private SidecarAuthorizationHandler authorizationHandler(Set<String> adminIdentities,
-                                                             AuthorizationProvider authorizationProvider,
-                                                             Set<Permission> requiredPermissions,
-                                                             String variableAwareResource)
+    private AdminBypassAuthorizationHandler authorizationHandler(Set<String> adminIdentities,
+                                                                 AuthorizationProvider authorizationProvider,
+                                                                 Set<Permission> requiredPermissions,
+                                                                 String variableAwareResource)
     {
         AndAuthorization authorization = AndAuthorization.create();
         for(Permission permission : requiredPermissions)
@@ -832,12 +831,18 @@ public class MainModule extends AbstractModule
             current.setResource(variableAwareResource);
             authorization.addAuthorization(current);
         }
-        SidecarAuthorizationHandler authorizationHandler = new SidecarAuthorizationHandler(adminIdentities,
-                                                                                           authorization);
+        AdminBypassAuthorizationHandler authorizationHandler = new AdminBypassAuthorizationHandler(adminIdentities,
+                                                                                                   authorization);
         authorizationHandler.addAuthorizationProvider(authorizationProvider);
         authorizationHandler.variableConsumer((routingCtx, authZContext) -> {
-            authZContext.variables().add("keyspace", routingCtx.pathParam("keyspace"));
-//            authZContext.variables().add("table", routingCtx.pathParam("table"));
+            if (routingCtx.pathParams().containsKey("keyspace"))
+            {
+                authZContext.variables().add("keyspace", routingCtx.pathParam("keyspace"));
+            }
+            if (routingCtx.pathParams().containsKey("table"))
+            {
+                authZContext.variables().add("table", routingCtx.pathParam("table"));
+            }
         });
         return authorizationHandler;
     }

@@ -24,6 +24,17 @@ package org.apache.cassandra.sidecar.config;
 public interface CacheConfiguration
 {
     /**
+     * @return if {@code true} updates the cache frequently. Cache entries will not be valid after set
+     * {@code expireAfterAccessMillis()}. if {@code false} cache entries are refreshed with set update interval
+     */
+    boolean activeUpdate();
+
+    /**
+     * @return cache entries are refreshed at set interval
+     */
+    long updateIntervalInMillis();
+
+    /**
      * @return the configured amount of time in milliseconds after the entry's creation, the most recent
      * replacement of its value, or its last access has elapsed to be considered an expired entry in the cache
      */

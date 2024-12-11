@@ -18,8 +18,6 @@
 
 package org.apache.cassandra.sidecar.acl.authorization;
 
-import java.security.Permissions;
-import java.util.Map;
 import java.util.Set;
 
 import org.apache.commons.lang3.tuple.Pair;
@@ -33,8 +31,7 @@ import org.apache.cassandra.sidecar.config.SidecarConfiguration;
 import org.apache.cassandra.sidecar.db.SystemAuthDatabaseAccessor;
 
 /**
- * Caches entries from system_auth.role_permissions table. The table maps valid certificate identities to Cassandra
- * roles. identity_to_role table is available since Cassandra versions 5.0
+ * Caches entries from system_auth.role_permissions table in Cassandra.
  */
 @Singleton
 public class RolePermissionsCache extends AuthCache<Pair<String, String>, Set<CassandraPermission>>
