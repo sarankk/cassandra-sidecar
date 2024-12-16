@@ -18,9 +18,7 @@
 
 package org.apache.cassandra.sidecar.acl.authorization;
 
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -34,6 +32,8 @@ import io.vertx.ext.auth.authorization.Authorization;
 import io.vertx.ext.auth.authorization.AuthorizationProvider;
 import io.vertx.ext.web.handler.HttpException;
 import org.apache.cassandra.sidecar.acl.IdentityToRoleCache;
+
+import static org.apache.cassandra.sidecar.utils.AuthUtils.extractIdentities;
 
 /**
  * Provides authorizations based on user's role. Extracts permissions user holds from Cassandra's
@@ -68,12 +68,7 @@ public class RoleBasedAuthorizationProvider implements AuthorizationProvider
     @Override
     public Future<Void> getAuthorizations(User user)
     {
-        validatePrincipal(user);
-        List<String> identities = Optional.ofNullable(user.principal().getString("identity"))
-                                          .map(Collections::singletonList)
-                                          .orElseGet(() -> Arrays.asList(user.principal()
-                                                                             .getString("identities")
-                                                                             .split(",")));
+        List<String> identities = extractIdentities(user);
 
         if (identities.isEmpty())
         {
@@ -87,27 +82,13 @@ public class RoleBasedAuthorizationProvider implements AuthorizationProvider
             throw new HttpException(HttpResponseStatus.UNAUTHORIZED.code(), "No matching Cassandra role found");
         }
 
-        if (cassandraRoleAuthorizationsCache.getAuthorizations(role) != null)
-        {
-            user.authorizations().add(getId(), cassandraRoleAuthorizationsCache.getAuthorizations(role));
-        }
-        if (sidecarRoleAuthorizationsProvider.getAuthorizations(role) != null)
-        {
-            user.authorizations().add(getId(), sidecarRoleAuthorizationsProvider.getAuthorizations(role));
-        }
+        // when entries in cache are not found, null is returned. We can not add null in user.authorizations()
+        Set<Authorization> cassandraAuthorizations
+        = Optional.ofNullable(cassandraRoleAuthorizationsCache.getAuthorizations(role)).orElse(Collections.emptySet());
+        Set<Authorization> sidecarAuthorizations
+        = Optional.ofNullable(sidecarRoleAuthorizationsProvider.getAuthorizations(role)).orElse(Collections.emptySet());
+        user.authorizations().add(getId(), cassandraAuthorizations);
+        user.authorizations().add(getId(), sidecarAuthorizations);
         return Future.succeededFuture();
-    }
-
-    private void validatePrincipal(User user)
-    {
-        if (user.principal() == null)
-        {
-            throw new HttpException(HttpResponseStatus.UNAUTHORIZED.code(), "User principal empty");
-        }
-
-        if (!user.principal().containsKey("identity") && !user.principal().containsKey("identities"))
-        {
-            throw new HttpException(HttpResponseStatus.UNAUTHORIZED.code(), "No valid identity found for authorizing");
-        }
     }
 }

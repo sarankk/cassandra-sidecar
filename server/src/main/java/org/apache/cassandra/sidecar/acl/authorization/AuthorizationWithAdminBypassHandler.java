@@ -18,17 +18,15 @@
 
 package org.apache.cassandra.sidecar.acl.authorization;
 
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
 import io.netty.handler.codec.http.HttpResponseStatus;
-import io.vertx.ext.auth.User;
 import io.vertx.ext.auth.authorization.Authorization;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.HttpException;
 import io.vertx.ext.web.handler.impl.AuthorizationHandlerImpl;
+
+import static org.apache.cassandra.sidecar.utils.AuthUtils.extractIdentities;
 
 /**
  * Verifies user has required authorizations. Allows admin identities to bypass authorization checks.
@@ -47,16 +45,14 @@ public class AuthorizationWithAdminBypassHandler extends AuthorizationHandlerImp
     @Override
     public void handle(RoutingContext ctx)
     {
-        User user = ctx.user();
-        validatePrincipal(user);
+        List<String> identities = extractIdentities(ctx.user());
 
-        List<String> identities = Optional.ofNullable(user.principal().getString("identity"))
-                                          .map(Collections::singletonList)
-                                          .orElseGet(() -> Arrays.asList(user.principal()
-                                                                             .getString("identities")
-                                                                             .split(",")));
+        if (identities.isEmpty())
+        {
+            throw new HttpException(HttpResponseStatus.UNAUTHORIZED.code(), "Missing client identities");
+        }
 
-        // Admin identities bypass route specific authorization checks
+        // Admin identities bypas route specific authorization checks
         if (identities.stream().anyMatch(adminIdentityResolver::isAdmin))
         {
             ctx.next();
@@ -64,18 +60,5 @@ public class AuthorizationWithAdminBypassHandler extends AuthorizationHandlerImp
         }
 
         super.handle(ctx);
-    }
-
-    private void validatePrincipal(User user)
-    {
-        if (user.principal() == null)
-        {
-            throw new HttpException(HttpResponseStatus.UNAUTHORIZED.code(), "User principal empty");
-        }
-
-        if (!user.principal().containsKey("identity") && !user.principal().containsKey("identities"))
-        {
-            throw new HttpException(HttpResponseStatus.UNAUTHORIZED.code(), "No valid identity found for authorizing");
-        }
     }
 }
