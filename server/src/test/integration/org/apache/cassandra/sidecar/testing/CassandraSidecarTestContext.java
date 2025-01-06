@@ -35,6 +35,7 @@ import io.vertx.core.Vertx;
 import org.apache.cassandra.distributed.UpgradeableCluster;
 import org.apache.cassandra.distributed.api.IInstanceConfig;
 import org.apache.cassandra.distributed.impl.AbstractClusterUtils;
+import org.apache.cassandra.distributed.impl.InstanceConfig;
 import org.apache.cassandra.distributed.shared.JMXUtil;
 import org.apache.cassandra.sidecar.adapters.base.CassandraFactory;
 import org.apache.cassandra.sidecar.adapters.cassandra41.Cassandra41Factory;
@@ -187,7 +188,7 @@ public class CassandraSidecarTestContext implements AutoCloseable
     {
         if (instancesConfig == null)
         {
-            return refreshInstancesConfig();
+            refreshInstancesConfig();
         }
         return this.instancesConfig;
     }
@@ -196,7 +197,6 @@ public class CassandraSidecarTestContext implements AutoCloseable
     {
         // clean-up any open sessions or client resources
         close();
-        closeSessionProvider();
         setInstancesConfig();
         return this.instancesConfig;
     }
@@ -251,7 +251,7 @@ public class CassandraSidecarTestContext implements AutoCloseable
         jmxClients = new ArrayList<>();
         List<IInstanceConfig> configs = buildInstanceConfigs(cluster);
         List<InetSocketAddress> addresses = buildContactList(configs);
-        sessionProvider = new CQLSessionProviderImpl(vertx, addresses, addresses, 500, null,
+        sessionProvider = new CQLSessionProviderImpl(addresses, addresses, 500, null,
                                                      0, username, password,
                                                      sslConfiguration, SharedExecutorNettyOptions.INSTANCE);
         for (int i = 0; i < configs.size(); i++)

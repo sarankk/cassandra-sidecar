@@ -179,7 +179,7 @@ public abstract class IntegrationTestBase
         CountDownLatch latch = new CountDownLatch(1);
         vertx.eventBus()
              .localConsumer(SidecarServerEvents.ON_SIDECAR_SCHEMA_INITIALIZED.address(), msg -> latch.countDown());
-        awaitLatchOrTimeout(latch, timeout, timeUnit, "waitForSchemaInitialized");
+        awaitLatchOrTimeout(latch, timeout, timeUnit);
         assertThat(latch.getCount()).describedAs("Sidecar schema not initialized").isZero();
     }
 
@@ -243,7 +243,7 @@ public abstract class IntegrationTestBase
         {
             try
             {
-                sidecarTestContext.instancesConfig();
+                sidecarTestContext.refreshInstancesConfig();
 
                 Session session = maybeGetSession();
 
@@ -310,6 +310,11 @@ public abstract class IntegrationTestBase
         assertThat(Uninterruptibles.awaitUninterruptibly(latch, duration, timeUnit))
         .describedAs("Latch " + hint + " times out after " + duration + ' ' + timeUnit.name())
         .isTrue();
+    }
+
+    protected static void awaitLatchOrTimeout(CountDownLatch latch, long duration, TimeUnit timeUnit)
+    {
+        awaitLatchOrTimeout(latch, duration, timeUnit, null);
     }
 
     protected Session maybeGetSession()

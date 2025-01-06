@@ -60,13 +60,6 @@ public class RestoreSlicesSchema extends TableSchema implements ExecuteOnCluster
     }
 
     @Override
-    protected void unprepareStatements()
-    {
-        insertSlice = null;
-        findAllByTokenRange = null;
-    }
-
-    @Override
     protected String tableName()
     {
         return RESTORE_SLICE_TABLE_NAME;
