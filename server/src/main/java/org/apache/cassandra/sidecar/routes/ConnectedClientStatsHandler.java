@@ -55,7 +55,7 @@ public class ConnectedClientStatsHandler extends AbstractHandler<Void> implement
     public Set<Authorization> requiredAuthorizations()
     {
         String resource = VariableAwareResource.CLUSTER.resource();
-        return ImmutableSet.of(SidecarPermissions.VIEW_CLUSTER.toAuthorization(resource));
+        return ImmutableSet.of(SidecarPermissions.READ_CLUSTER.toAuthorization(resource));
     }
 
     /**
