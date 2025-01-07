@@ -149,7 +149,7 @@ public class SidecarSchema
         }
         try
         {
-            isInitialized = sidecarInternalKeyspace.initialize(session);
+            isInitialized = sidecarInternalKeyspace.initialize(session, this::shouldCreateSchema);
             if (isInitialized())
             {
                 LOGGER.info("Sidecar schema is initialized");
