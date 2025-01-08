@@ -125,7 +125,7 @@ public class SidecarSchema
         }
     }
 
-    private synchronized void initialize(long timerId)
+    protected synchronized void initialize(long timerId)
     {
         // it should not happen since the callback is only scheduled when isEnabled == true
         if (!schemaKeyspaceConfiguration.isEnabled())
@@ -134,22 +134,24 @@ public class SidecarSchema
             return;
         }
 
-
         if (isInitialized())
         {
             LOGGER.debug("Sidecar schema is already initialized!");
             cancelTimer(timerId);
             return;
         }
+
         Session session = cqlSessionProvider.get();
         if (session == null)
         {
             LOGGER.debug("Cql session is not yet available. Skip initializing...");
             return;
         }
+
         try
         {
             isInitialized = sidecarInternalKeyspace.initialize(session, this::shouldCreateSchema);
+            
             if (isInitialized())
             {
                 LOGGER.info("Sidecar schema is initialized");

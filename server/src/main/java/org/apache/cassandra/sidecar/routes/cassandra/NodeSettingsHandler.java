@@ -19,9 +19,8 @@
 package org.apache.cassandra.sidecar.routes.cassandra;
 
 
+import java.util.Collections;
 import java.util.Set;
-
-import com.google.common.collect.ImmutableSet;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
@@ -61,7 +60,7 @@ public class NodeSettingsHandler extends AbstractHandler<Void> implements Access
     public Set<Authorization> requiredAuthorizations()
     {
         String resource = VariableAwareResource.CLUSTER.resource();
-        return ImmutableSet.of(SidecarPermissions.READ_CLUSTER.toAuthorization(resource));
+        return Collections.singleton(SidecarPermissions.READ_CLUSTER.toAuthorization(resource));
     }
 
     /**
