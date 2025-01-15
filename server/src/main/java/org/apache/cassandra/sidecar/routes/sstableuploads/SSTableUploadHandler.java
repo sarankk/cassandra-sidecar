@@ -34,10 +34,8 @@ import io.vertx.core.file.FileSystem;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.net.SocketAddress;
 import io.vertx.ext.auth.authorization.Authorization;
-import io.vertx.ext.auth.authorization.OrAuthorization;
 import io.vertx.ext.web.RoutingContext;
 import org.apache.cassandra.sidecar.acl.authorization.BasicPermissions;
-import org.apache.cassandra.sidecar.acl.authorization.FeaturePermissions;
 import org.apache.cassandra.sidecar.acl.authorization.VariableAwareResource;
 import org.apache.cassandra.sidecar.cluster.CassandraAdapterDelegate;
 import org.apache.cassandra.sidecar.common.response.SSTableUploadResponse;
@@ -112,9 +110,7 @@ public class SSTableUploadHandler extends AbstractHandler<SSTableUploadRequestPa
     public Set<Authorization> requiredAuthorizations()
     {
         List<String> eligibleResources = VariableAwareResource.DATA_WITH_KEYSPACE_TABLE.expandedResources();
-        return Collections.singleton(OrAuthorization.create()
-                                                    .addAuthorization(FeaturePermissions.BULK_WRITE_DIRECT.toAuthorization(eligibleResources))
-                                                    .addAuthorization(BasicPermissions.UPLOAD_STAGE_SSTABLE.toAuthorization(eligibleResources)));
+        return Collections.singleton(BasicPermissions.UPLOAD_STAGED_SSTABLE.toAuthorization(eligibleResources));
     }
 
     /**
