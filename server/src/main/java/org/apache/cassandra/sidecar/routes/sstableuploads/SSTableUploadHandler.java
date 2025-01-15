@@ -34,8 +34,10 @@ import io.vertx.core.file.FileSystem;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.net.SocketAddress;
 import io.vertx.ext.auth.authorization.Authorization;
+import io.vertx.ext.auth.authorization.OrAuthorization;
 import io.vertx.ext.web.RoutingContext;
-import org.apache.cassandra.sidecar.acl.authorization.SidecarPermissions;
+import org.apache.cassandra.sidecar.acl.authorization.BasicPermissions;
+import org.apache.cassandra.sidecar.acl.authorization.FeaturePermissions;
 import org.apache.cassandra.sidecar.acl.authorization.VariableAwareResource;
 import org.apache.cassandra.sidecar.cluster.CassandraAdapterDelegate;
 import org.apache.cassandra.sidecar.common.response.SSTableUploadResponse;
@@ -78,13 +80,13 @@ public class SSTableUploadHandler extends AbstractHandler<SSTableUploadRequestPa
     /**
      * Constructs a handler with the provided params.
      *
-     * @param vertx                the vertx instance
-     * @param serviceConfiguration configuration object holding config details of Sidecar
-     * @param metadataFetcher      the interface to retrieve metadata
-     * @param uploader             a class that uploads the components
-     * @param uploadPathBuilder    a class that provides SSTableUploads directories
-     * @param executorPools        executor pools for blocking executions
-     * @param validator            a validator instance to validate Cassandra-specific input
+     * @param vertx                 the vertx instance
+     * @param serviceConfiguration  configuration object holding config details of Sidecar
+     * @param metadataFetcher       the interface to retrieve metadata
+     * @param uploader              a class that uploads the components
+     * @param uploadPathBuilder     a class that provides SSTableUploads directories
+     * @param executorPools         executor pools for blocking executions
+     * @param validator             a validator instance to validate Cassandra-specific input
      * @param digestVerifierFactory a factory of checksum verifiers
      */
     @Inject
@@ -110,7 +112,9 @@ public class SSTableUploadHandler extends AbstractHandler<SSTableUploadRequestPa
     public Set<Authorization> requiredAuthorizations()
     {
         List<String> eligibleResources = VariableAwareResource.DATA_WITH_KEYSPACE_TABLE.expandedResources();
-        return Collections.singleton(SidecarPermissions.UPLOAD_SSTABLE.toAuthorization(eligibleResources));
+        return Collections.singleton(OrAuthorization.create()
+                                                    .addAuthorization(FeaturePermissions.BULK_WRITE_DIRECT.toAuthorization(eligibleResources))
+                                                    .addAuthorization(BasicPermissions.UPLOAD_STAGE_SSTABLE.toAuthorization(eligibleResources)));
     }
 
     /**

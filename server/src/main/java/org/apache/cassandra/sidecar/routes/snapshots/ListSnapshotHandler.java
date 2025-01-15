@@ -35,8 +35,10 @@ import io.vertx.core.Future;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.net.SocketAddress;
 import io.vertx.ext.auth.authorization.Authorization;
+import io.vertx.ext.auth.authorization.OrAuthorization;
 import io.vertx.ext.web.RoutingContext;
-import org.apache.cassandra.sidecar.acl.authorization.SidecarPermissions;
+import org.apache.cassandra.sidecar.acl.authorization.BasicPermissions;
+import org.apache.cassandra.sidecar.acl.authorization.FeaturePermissions;
 import org.apache.cassandra.sidecar.acl.authorization.VariableAwareResource;
 import org.apache.cassandra.sidecar.cluster.CassandraAdapterDelegate;
 import org.apache.cassandra.sidecar.common.response.ListSnapshotFilesResponse;
@@ -101,7 +103,9 @@ public class ListSnapshotHandler extends AbstractHandler<SnapshotRequestParam> i
     public Set<Authorization> requiredAuthorizations()
     {
         List<String> eligibleResources = VariableAwareResource.DATA_WITH_KEYSPACE_TABLE.expandedResources();
-        return Collections.singleton(SidecarPermissions.READ_SNAPSHOT.toAuthorization(eligibleResources));
+        return Collections.singleton(OrAuthorization.create()
+                                                    .addAuthorization(FeaturePermissions.BULK_READ_DIRECT.toAuthorization(eligibleResources))
+                                                    .addAuthorization(BasicPermissions.READ_SNAPSHOT.toAuthorization(eligibleResources)));
     }
 
     /**

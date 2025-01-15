@@ -55,11 +55,7 @@ public class CacheConfigurationImpl implements CacheConfiguration
         this(expireAfterAccessMillis, maximumSize, true, 5, 1000);
     }
 
-    public CacheConfigurationImpl(long expireAfterAccessMillis,
-                                  long maximumSize,
-                                  boolean enabled,
-                                  int warmupRetries,
-                                  long warmupRetryIntervalMillis)
+    public CacheConfigurationImpl(long expireAfterAccessMillis, long maximumSize, boolean enabled, int warmupRetries, long warmupRetryIntervalMillis)
     {
         this.expireAfterAccessMillis = expireAfterAccessMillis;
         this.maximumSize = maximumSize;
